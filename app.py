@@ -23,7 +23,7 @@ def get_instrument_id(client, ticker):
             return instrument.uid
     return None
 
-# Функция для размещения ордера
+# Функция для размещения ордера любого
 def place_order(client, ticker, direction, quantity):
     instrument_id = get_instrument_id(client, ticker)
     if not instrument_id:
