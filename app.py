@@ -23,7 +23,7 @@ def get_instrument_id(client, ticker):
             return instrument.uid
     return None
 
-# Функция для размещения ордера любого
+# Функция для размещения ордера
 def place_order(client, ticker, direction, quantity):
     instrument_id = get_instrument_id(client, ticker)
     if not instrument_id:
@@ -68,15 +68,26 @@ def webhook():
         if "error" in result:
             return jsonify(result), 400
         return jsonify(result)
+
 # Основной процесс
 def main():
     global account_id
 
-    # Шаг 1: Открываем счет в песочнице
     with Client(TOKEN) as client:
+        # Шаг 1: Проверяем существующие песочные аккаунты
+        accounts = client.sandbox.get_sandbox_accounts()
+        print("Существующие песочные аккаунты:", accounts)
+
+        if accounts.accounts:
+            # Если аккаунты есть, закрываем их все
+            for acc in accounts.accounts:
+                print(f"Закрываем аккаунт: {acc.id}")
+                client.sandbox.close_sandbox_account(account_id=acc.id)
+        
+        # Шаг 2: Создаём новый аккаунт после очистки
         sandbox_account = client.sandbox.open_sandbox_account()
         account_id = sandbox_account.account_id
-        print(f"Номер счета: {account_id}")
+        print(f"Создан новый счет: {account_id}")
 
     # Запускаем Flask-сервер для обработки вебхуков
     app.run(host='0.0.0.0', port=5000)
