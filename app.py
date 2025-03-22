@@ -1,5 +1,5 @@
-from tinkoff.invest import Client, OrderDirection, OrderType
 from flask import Flask, request, jsonify
+from tinkoff.invest import FindInstrumentRequest, InstrumentType
 
 # Ваш токен доступа
 TOKEN = "t.GHari6CScXxN9QAO4FnpEKDY-jwBfqUKWKqUj--J2Ry-Rf7Z2XvqEpWdTXgkfIq0k7-hfCO4ptJBUVYRp0yWWw"
@@ -16,8 +16,12 @@ def get_instrument_id(client, ticker):
     if ticker in instruments_cache:
         return instruments_cache[ticker]
 
-    instruments = client.instruments.shares()
-    for instrument in instruments.instruments:
+    response = client.instruments.find_instrument(
+        query=ticker,
+        instrument_kind=InstrumentType.INSTRUMENT_TYPE_SHARE,
+        api_trade_available_flag=True
+    )
+    for instrument in response.instruments:
         if instrument.ticker == ticker:
             instruments_cache[ticker] = instrument.uid
             return instrument.uid
@@ -35,7 +39,7 @@ def place_order(client, ticker, direction, quantity):
             quantity=quantity,
             direction=direction,
             account_id=account_id,
-            order_type=OrderType.MARKET,
+            order_type=client.OrderType.MARKET,  # Теперь через client
         )
         return {"order_id": response.order_id}
     except Exception as e:
@@ -55,15 +59,15 @@ def webhook():
         return jsonify({"error": "Недостаточно данных в вебхуке: требуется direction, position_size и ticker."}), 400
 
     if direction.lower() == "buy":
-        direction_order = OrderDirection.BUY
+        direction_order = client.OrderDirection.ORDER_DIRECTION_BUY  # Теперь через client
     elif direction.lower() == "sell":
-        direction_order = OrderDirection.SELL
+        direction_order = client.OrderDirection.ORDER_DIRECTION_SELL  # Теперь через client
     else:
         return jsonify({"error": "Неподдерживаемое направление: " + direction}), 400
 
     quantity = position_size
 
-    with Client(TOKEN) as client:
+    with client.Client(TOKEN) as client:  # Изменено на client.Client
         result = place_order(client, ticker, direction_order, quantity)
         if "error" in result:
             return jsonify(result), 400
@@ -73,7 +77,7 @@ def webhook():
 def main():
     global account_id
 
-    with Client(TOKEN) as client:
+    with client.Client(TOKEN) as client:  # Изменено на client.Client
         # Шаг 1: Проверяем существующие песочные аккаунты
         accounts = client.sandbox.get_sandbox_accounts()
         print("Существующие песочные аккаунты:", accounts)
