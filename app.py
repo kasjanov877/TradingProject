@@ -1,8 +1,10 @@
+import os
+from dotenv import load_dotenv
 from tinkoff.invest import Client, OrderDirection, OrderType
 from flask import Flask, request, jsonify
 
 # Ваш токен доступа
-TOKEN = "t.GHari6CScXxN9QAO4FnpEKDY-jwBfqUKWKqUj--J2Ry-Rf7Z2XvqEpWdTXgkfIq0k7-hfCO4ptJBUVYRp0yWWw"
+TOKEN = os.getenv("TINKOFF_INVEST_TOKEN")
 
 # Создаем Flask-приложение для обработки вебхуков
 app = Flask(__name__)
