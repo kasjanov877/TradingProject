@@ -2,7 +2,7 @@ import json
 from flask import Flask, request, jsonify
 from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentType, FindInstrumentRequest
 
-TOKEN = "t.GHari6CScXxN9QAO4FnpEKDY-jwBfqUKWKqUj--J2Ry-Rf7Z2XvqEpWdTXgkfIq0k7-hfCO4ptJBUVYRp0yWWw"
+TOKEN = "t.Gk6qrpcVv87MYW8ZPgUOO7dKVV-GLQKtKAeymLEmZaGA6UTi9LseC0zvkCZ4GrgRdnrNFxfuwTgjT1V4xV-oJA"
 
 app = Flask(__name__)
 account_id = None
