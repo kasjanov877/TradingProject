@@ -8,6 +8,25 @@ app = Flask(__name__)
 account_id = None
 instruments_cache = {}
 
+# Библиотека TICKER => FIGI
+ticker_to_figi_library = {
+    "SBER" : "???",
+    "GAZP" : "???",
+    "OZON" : "???"
+}
+
+# Пустая библиотека FIGI => UID
+figi_to_uid_library = {}
+
+# Пример добавления значения FIGI и UID
+# figi_to_uid_library["BBG004730N88"] = "uid_123456"
+# figi_to_uid_library["BBG000B9XRY9"] = "uid_654321"
+# В нашему случае
+#
+# response = client.instruments.find_instrument(query=figi_to_uid_library[ticker_to_figi[ticker]])
+#
+# Передаем на query нужный uid через нужный figi, что определен ticker'ом
+#
 
 def get_instrument_id(client, ticker):
     # Очищаем кэш перед каждым запросом для теста
