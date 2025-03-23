@@ -1,59 +1,56 @@
+import json
 from flask import Flask, request, jsonify
 from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentType, FindInstrumentRequest
+from json
 
 TOKEN = "t.GHari6CScXxN9QAO4FnpEKDY-jwBfqUKWKqUj--J2Ry-Rf7Z2XvqEpWdTXgkfIq0k7-hfCO4ptJBUVYRp0yWWw"
 
 app = Flask(__name__)
-
 account_id = None
-# instruments_cache = {}
-
-# Библиотека TICKER => FIGI
-ticker_to_figi_library = {
-    "SBER" : "BBG004730N88",
-}
-
-# Пустая библиотека FIGI => UID
 figi_to_uid_library = {}
+ticker_to_figi_library = {}
 
-# Пример добавления значения FIGI и UID
-# figi_to_uid_library["BBG004730N88"] = "uid_123456"
-# figi_to_uid_library["BBG000B9XRY9"] = "uid_654321"
-# В нашему случае
-#
-# response = client.instruments.find_instrument(query=figi_to_uid_library[ticker_to_figi[ticker]])
-#
-# Передаем на query нужный uid через нужный figi, что определен ticker'ом
-#
+def initialize_libraries(tokens_to_figis_file, figis_to_uid_file):
+    with open(tokens_to_figis_file, 'r', encoding='utf-8') as json_file:
+        global ticker_to_figi_library
+        ticker_to_figi_library = json.load(json_file)
+    with open(figis_to_uid_file, 'r', encoding='utf-8') as json_file:
+        global figi_to_uid_library
+        figi_to_uid_library = json.load(json_file)
+
+def adding_new_figi_to_uid_pair(figi, uid, file):
+
+    global figi_to_uid_library
+    figi_to_uid_library[figi] = uid  # Добавляем в библиотеку новую пару FIGI → UID
+
+    with open(file, 'w', encoding='utf-8') as json_file:  # Записываем в файл
+        json.dump(figi_to_uid_library, json_file, ensure_ascii=False, indent=4)
+        print(f"Записано в файл {file}: {figi} => {uid}")
 
 def get_instrument_id(client, ticker):
-    # Очищаем кэш перед каждым запросом для теста
-    # instruments_cache.clear()
-    print(f"Кэш очищен перед поиском {ticker}")
 
-    if figi_to_uid_library[ticker_to_figi_library[ticker]] != none:
-        return figi_to_uid_library[ticker_to_figi_library[ticker]]
+    try:
+        figi = ticker_to_figi_library[ticker]
+    except KeyError:
+        print(f"Тикер {ticker} не найден в библиотеке")
+        return None
+
+    if figi in figi_to_uid_library:
+        return figi_to_uid_library[figi]
 
     response = client.instruments.find_instrument(
-        query=ticker_to_figi_library[ticker],
+        query=figi,
         instrument_kind=InstrumentType.INSTRUMENT_TYPE_SHARE,
         api_trade_available_flag=True
     )
     try:
         current_uid = response[0].uid
-        print(f"Инструмент TICKER: {ticker} FIGI: {ticker_to_figi_library[ticker]} UID: {current_uid}")
-        figi_to_uid_library[ticker_to_figi_library[ticker]] = current_uid
+        print(f"Инструмент - TICKER: {ticker}; FIGI: {ticker_to_figi_library[ticker]}; UID: {current_uid}")
+        adding_new_figi_to_uid_pair(figi, current_uid, 'figis_uid.json')
         return current_uid
     except Exception as e:
         print(f"Ошибка при поиске инструмента: {str(e)}")
         return None
-    #for instrument in response.instruments:
-    #    if instrument.ticker == ticker:
-    #        instruments_cache[ticker] = instrument.uid
-    #        print(f"Выбран инструмент: {instrument.ticker} с uid {instrument.uid}")
-    #        return instrument.uid
-    #return None
-
 
 def place_order(client, ticker, direction, quantity, price=None):
     instrument_id = get_instrument_id(client, ticker)
@@ -86,7 +83,6 @@ def place_order(client, ticker, direction, quantity, price=None):
         print(f"Ошибка при размещении ордера: {str(e)}")
         return {"error": str(e)}
 
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -115,9 +111,10 @@ def webhook():
             return jsonify(result), 400
         return jsonify(result)
 
-
 def main():
     global account_id
+
+    initialize_libraries('tokens_figi.json', 'figis_uid.json')
 
     with Client(TOKEN) as client:
         accounts = client.sandbox.get_sandbox_accounts()
@@ -136,7 +133,6 @@ def main():
         print(f"Добавлено 100,000 рублей на счёт {account_id}")
 
     app.run(host='0.0.0.0', port=5000)
-
 
 if __name__ == "__main__":
     main()
