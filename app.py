@@ -1,42 +1,40 @@
 import json
 from flask import Flask, request, jsonify
 from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentType, FindInstrumentRequest
-from json
 
 TOKEN = "t.GHari6CScXxN9QAO4FnpEKDY-jwBfqUKWKqUj--J2Ry-Rf7Z2XvqEpWdTXgkfIq0k7-hfCO4ptJBUVYRp0yWWw"
 
 app = Flask(__name__)
 account_id = None
-figi_to_uid_library = {}
-ticker_to_figi_library = {}
+ticker_to_figi_uid_library = {}
 
-def initialize_libraries(tokens_to_figis_file, figis_to_uid_file):
+
+def initialize_libraries(tokens_to_figis_file):
     with open(tokens_to_figis_file, 'r', encoding='utf-8') as json_file:
-        global ticker_to_figi_library
-        ticker_to_figi_library = json.load(json_file)
-    with open(figis_to_uid_file, 'r', encoding='utf-8') as json_file:
-        global figi_to_uid_library
-        figi_to_uid_library = json.load(json_file)
+        global ticker_to_figi_uid_library
+        ticker_to_figi_uid_library = json.load(json_file)
 
-def adding_new_figi_to_uid_pair(figi, uid, file):
+def adding_new_figi_to_uid_pair(ticker, figi, uid, file):
 
-    global figi_to_uid_library
-    figi_to_uid_library[figi] = uid  # Добавляем в библиотеку новую пару FIGI → UID
+    global ticker_to_figi_uid_library
+    ticker_to_figi_uid_library[ticker] = {"figi": figi, "uid": uid}  # Обновляем библиотеку
 
     with open(file, 'w', encoding='utf-8') as json_file:  # Записываем в файл
-        json.dump(figi_to_uid_library, json_file, ensure_ascii=False, indent=4)
-        print(f"Записано в файл {file}: {figi} => {uid}")
+        json.dump(ticker_to_figi_uid_library, json_file, ensure_ascii=False, indent=4)
+        print(f"Записано в файл {file}: {ticker} => {figi}, UID: {uid}")
 
 def get_instrument_id(client, ticker):
-
-    try:
-        figi = ticker_to_figi_library[ticker]
-    except KeyError:
+    # Проверка, есть ли тикер в библиотеке
+    if ticker not in ticker_to_figi_uid_library:
         print(f"Тикер {ticker} не найден в библиотеке")
         return None
 
-    if figi in figi_to_uid_library:
-        return figi_to_uid_library[figi]
+    figi = ticker_to_figi_uid_library[ticker]["figi"]
+    uid = ticker_to_figi_uid_library[ticker].get("uid", None)
+
+    # Если uid уже есть, возвращаем его
+    if uid:
+        return uid
 
     response = client.instruments.find_instrument(
         query=figi,
@@ -44,10 +42,15 @@ def get_instrument_id(client, ticker):
         api_trade_available_flag=True
     )
     try:
-        current_uid = response[0].uid
-        print(f"Инструмент - TICKER: {ticker}; FIGI: {ticker_to_figi_library[ticker]}; UID: {current_uid}")
-        adding_new_figi_to_uid_pair(figi, current_uid, 'figis_uid.json')
-        return current_uid
+        instrument = response.instruments
+        if instrument:
+            current_uid = instrument[0].uid
+            print(f"Найден новый инструмент - TICKER: {ticker}; FIGI: {figi}; UID: {current_uid}")
+            adding_new_figi_to_uid_pair(ticker, figi, current_uid, 'tokens_figi_uid.json')
+            return current_uid
+        else:
+            print(f"Инструмент с тикером {ticker} не найден в базе.")
+            return None
     except Exception as e:
         print(f"Ошибка при поиске инструмента: {str(e)}")
         return None
@@ -114,7 +117,7 @@ def webhook():
 def main():
     global account_id
 
-    initialize_libraries('tokens_figi.json', 'figis_uid.json')
+    initialize_libraries('tokens_figi_uid.json')
 
     with Client(TOKEN) as client:
         accounts = client.sandbox.get_sandbox_accounts()
