@@ -1,7 +1,7 @@
 # Импорт необходимых библиотек
 import json
+import uuid
 from http.client import responses
-
 from flask import Flask, request, jsonify  # Веб-фреймворк и инструменты для работы с HTTP
 from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentIdType, \
     InstrumentRequest, MoneyValue, Quotation  # Официальный SDK Тинькофф Инвестиций
@@ -22,9 +22,8 @@ def initialize_libraries(tokens_to_figis_file):
         global ticker_to_figi_uid_library
         ticker_to_figi_uid_library = json.load(json_file)
 
-
 def get_full_instrument(client, ticker):
-    """Получает полную информацию об инструменте по тикеру через API"""
+    """Получает полную информацию по инструменту по полученному тикеру"""
     # Проверка наличия тикера в библиотеке
     if ticker not in ticker_to_figi_uid_library:
         print(f"Тикер {ticker} не найден в библиотеке")
@@ -75,23 +74,23 @@ def get_quantity(expected_sum, instrument_lot, price=None):
 
 
 def place_order(client, ticker, direction, expected_sum, price=None):
-    """Размещает ордер через API Тинькофф"""
+    """Размещает рыночный ордер через API Тинькофф"""
     current_instrument = get_full_instrument(client, ticker)
     if current_instrument is None:
         return {"error": "Не найден инструмент"}, 400
 
     # Расчет количества лотов
     quantity = get_quantity(expected_sum, current_instrument.lot, price)
+    if quantity == 0:
+        return {"error": "Количество лотов равно 0"}, 400
+    
+    # Генерация уникального client_order_id для идемпотентности
+    client_order_id = str(uuid.uuid4())
 
     try:
         # Определение типа ордера (рыночный/лимитный)
-        if price is not None:
-            order_type = OrderType.ORDER_TYPE_LIMIT
-            print(f"Размещаем лимитный ордер с ценой {price}...")
-        else:
-            order_type = OrderType.ORDER_TYPE_MARKET
-            price_value = None
-            print(f"Размещаем рыночный ордер...")
+        order_type = OrderType.ORDER_TYPE_MARKET
+        print(f"Размещаем рыночный ордер...")
 
         # Отправка ордера в песочницу
         response = client.orders.post_order(
@@ -100,13 +99,17 @@ def place_order(client, ticker, direction, expected_sum, price=None):
             direction=direction,
             account_id=account_id,
             order_type=order_type,
-            price=price if order_type == OrderType.ORDER_TYPE_LIMIT else None
+            order_id=client_order_id,  # Всегда генерируем новый order_id
+            price=None # Рыночный ордер не использует цену
         )
         print(f"Ордер успешно размещён: {response}")
-        return {"order_id": response.order_id}
+        return {
+            "client_order_id" : client_order_id, 
+            "exchange_order_id": response.order_id
+        }, 200 # Успех — возвращаем кортеж с результатом и статусом 200
     except Exception as e:
         print(f"Ошибка при размещении ордера: {str(e)}")
-        return {"error": str(e)}
+        return {"error": str(e)}, 400 # Ошибка — возвращаем кортеж с ошибкой и статусом 400
 
 
 @app.route('/webhook', methods=['POST'])
@@ -118,21 +121,7 @@ def webhook():
     # Извлечение параметров из запроса
     ticker = data.get("ticker")
     direction = data.get("direction")
-    price_value = data.get("price")
-
-    # Преобразуем цену в float для точности
-    price_float = float(price_value)
-
-    # Получаем целую часть и дробную (нано-часть)
-    units = int(price_float)
-    nano = round((price_float - units) * 1_000_000)
-
-    # Создаем объект Quotation
-    price = Quotation(
-        units=units,
-        nano=nano
-    )
-    print(price)
+    price = data.get("price")
     expected_sum = int(data.get("expected_sum"))
 
     # Валидация входных данных
@@ -147,12 +136,11 @@ def webhook():
     else:
         return jsonify({"error": "Неподдерживаемое направление"}), 400
 
+       
     # Размещение ордера через SDK
     with SandboxClient(TOKEN) as client:
-        result = place_order(client, ticker, direction_order, expected_sum, price)
-        if "error" in result:
-            return jsonify(result), 400
-        return jsonify(result)
+        result, status = place_order(client, ticker, direction_order, expected_sum, price)
+        return jsonify(result), status
 
 
 def initialize_sandbox_account(client):
@@ -164,12 +152,9 @@ def initialize_sandbox_account(client):
         # Если аккаунт есть, подключаемся к первому найденному
         account_id = accounts.accounts[0].id
         print(f"Подключено к существующему счету: {account_id}")
-
-        balance = client.sandbox.sandbox_pay_in(
-            account_id=account_id,
-            amount={"units": 0, "nano": 0}
-        )
-        print(f"Баланс: {balance}")
+        portfolio = client.sandbox.get_sandbox_portfolio(account_id=account_id)
+        balance = portfolio.total_amount_currencies
+        print(f"Баланс: {balance.units}.{balance.nano} {balance.currency}")
 
     else:
         # Если аккаунтов нет, создаем новый и пополняем его
@@ -181,7 +166,10 @@ def initialize_sandbox_account(client):
             account_id=account_id,
             amount=MoneyValue(units=200000, nano=0, currency="rub")  # 200 000 рублей
         )
+        portfolio = client.sandbox.get_sandbox_portfolio(account_id=account_id)
+        balance = portfolio.total_amount_currencies
         print(f"Добавлены средства на счет {account_id}")
+        print(f"Баланс: {balance.units}.{balance.nano} {balance.currency}")
 
 def main():
     """Основная функция инициализации"""
