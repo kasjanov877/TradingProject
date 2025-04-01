@@ -1,11 +1,10 @@
-# utils.py
 import csv
 import os
 
-def get_quantity(expected_sum, lot):
+def get_quantity(expected_sum, price, lot):
     try:
-        units = expected_sum / lot
-        quantity = int(units) // lot * lot
+        cost_per_lot = price * lot  # Стоимость одного лота
+        quantity = int(expected_sum / cost_per_lot)  # Количество лотов
         return quantity if quantity > 0 else 0
     except Exception as e:
         print(f"Ошибка при расчёте количества: {str(e)}")
@@ -16,7 +15,7 @@ def log_trade_to_csv(trade_data, csv_file="trades.csv"):
         "ticker", "figi", "instrument_uid", "open_datetime", "close_datetime",
         "entry_price", "exit_price", "quantity", "broker_fee", "profit_gross",
         "profit_net", "entry_client_order_id", "entry_exchange_order_id",
-        "exit_client_order_id", "exit_exchange_order_id"
+        "exit_client_order_id", "exit_exchange_order_id", "exitComment"
     ]
     file_exists = os.path.exists(csv_file)
     with open(csv_file, 'a', newline='', encoding='utf-8') as csvfile:
