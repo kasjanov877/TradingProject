@@ -1,5 +1,5 @@
 # tinkoff_api.py
-from tinkoff.invest import SandboxClient, MoneyValue
+from tinkoff.invest import Client, MoneyValue
 
 TOKEN = "t.Gk6qrpcVv87MYW8ZPgUOO7dKVV-GLQKtKAeymLEmZaGA6UTi9LseC0zvkCZ4GrgRdnrNFxfuwTgjT1V4xV-oJA"
 

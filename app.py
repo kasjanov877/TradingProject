@@ -8,7 +8,7 @@ from notifier import notify_error
 from validator import validate_webhook_data  # Новая библиотека
 from flask import Flask, request, jsonify
 from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentIdType
-from tinkoff.invest.sandbox.client import SandboxClient
+#from tinkoff.invest.sandbox.client import Client
 from order_monitor import monitor_order_completion
 from utils import get_quantity, log_trade_to_csv, check_position_exists, check_direction, can_open_position
 from tinkoff_api import initialize_sandbox_account, TOKEN
@@ -157,7 +157,7 @@ def webhook():
     expected_sum, exit_comment, price = result  # Распаковываем price
 
     try:
-        with SandboxClient(TOKEN, timeout=5) as client:
+        with Client(token=TOKEN, sandbox=True, timeout=5) as client:
             result, status = place_order(client, ticker, figi, direction, expected_sum, exit_comment, price)  # Передаем price
             if status != 200:
                 notify_error(ticker, expected_sum or "N/A", "OrderError", result.get("error", "Неизвестная ошибка"))
@@ -168,7 +168,7 @@ def webhook():
 
 def main():
     global account_id
-    with SandboxClient(TOKEN) as client:
+    with Client(token=TOKEN, sandbox=True) as client:
         account_id = initialize_sandbox_account(client)
     app.run(host='0.0.0.0', port=5000)
 
