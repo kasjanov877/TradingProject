@@ -1,10 +1,10 @@
 # order_monitor.py
 import time
-from tinkoff.invest import Client
+from tinkoff.invest import SandboxClient
 from tinkoff_api import TOKEN  # Импортируем TOKEN из tinkoff_api.py
 
 def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, current_positions, log_trade_to_csv, exit_comment=None, exit_client_order_id=None):
-    with Client(token = TOKEN, sandbox = True) as client:
+    with SandboxClient(TOKEN) as client:
         while True:
             close_state = client.orders.get_order_state(account_id=account_id, order_id=close_order_id)
             if close_state.lots_executed == close_state.lots_requested and close_state.execution_report_status == 1:  # Исполнена (FILL)
