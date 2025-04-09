@@ -132,12 +132,14 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, pri
         open_order_id = current_positions[ticker]["exchange_order_id"]
         # Запускаем мониторинг выполнения ордеров в отдельном потоке.
         # Передаём client_order_id закрытия для записи в статистику.
+        # Передаем client как аргумент в поток.
         threading.Thread(target=monitor_order_completion, args=(
-            account_id, ticker, open_order_id, response.order_id, current_positions, log_trade_to_csv, exit_comment, client_order_id
+            client, account_id, ticker, open_order_id, response.order_id, current_positions, log_trade_to_csv, exit_comment, client_order_id
         )).start()
 
     # Возвращаем успешный результат с клиентским и биржевым ID ордера.
     return {"client_order_id": client_order_id, "exchange_order_id": response.order_id}, 200
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
