@@ -1,20 +1,42 @@
-# tinkoff_api.py
-from tinkoff.invest import SandboxClient, MoneyValue
 
+from tinkoff.invest import Client
+
+# Глобальный токен доступа к API Тинькофф
 TOKEN = "t.Gk6qrpcVv87MYW8ZPgUOO7dKVV-GLQKtKAeymLEmZaGA6UTi9LseC0zvkCZ4GrgRdnrNFxfuwTgjT1V4xV-oJA"
 
-def initialize_sandbox_account(client):
-    accounts = client.sandbox.get_sandbox_accounts()
-    if accounts.accounts:
-        account_id = accounts.accounts[0].id
-        print(f"Подключено к существующему счету: {account_id}")
-        return account_id
+def initialize_account(token: str):
+    """
+    Инициализирует подключение к аккаунту с использованием реального токена.
+    
+    Аргументы:
+        token (str): Токен доступа к API.
+        
+    Возвращает:
+        account_id (str): Идентификатор аккаунта или None в случае ошибки.
+    """
+    try:
+        with Client(token, timeout=10) as client:
+            # Получаем список всех аккаунтов
+            accounts = client.accounts.get_accounts()
+            
+            if accounts.accounts:
+                # Если есть хотя бы один аккаунт, используем первый
+                account_id = accounts.accounts[0].id
+                print(f"Подключено к реальному счету: {account_id}")
+                return account_id
+            else:
+                # Если аккаунтов нет, возвращаем None
+                print("Аккаунт не найден.")
+                return None
+    except Exception as e:
+        print(f"Ошибка при инициализации аккаунта: {str(e)}")
+        return None
+
+# Если файл запускается напрямую (для тестирования)
+
+if __name__ == "__main__":
+    account_id = initialize_account(TOKEN)
+    if account_id:
+        print(f"Успешно инициализирован аккаунт: {account_id}")
     else:
-        sandbox_account = client.sandbox.open_sandbox_account()
-        account_id = sandbox_account.account_id
-        client.sandbox.sandbox_pay_in(
-            account_id=account_id,
-            amount=MoneyValue(units=200000, nano=0, currency="rub")
-        )
-        print(f"Создан новый счет: {account_id}")
-        return account_id
+        print("Не удалось инициализировать аккаунт.")
