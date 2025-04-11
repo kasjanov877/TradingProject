@@ -1,8 +1,8 @@
-
+import os
 from tinkoff.invest import Client
-
+from tinkoff.invest.constants import INVEST_GRPC_API
 # Глобальный токен доступа к API Тинькофф
-TOKEN = "t.Gk6qrpcVv87MYW8ZPgUOO7dKVV-GLQKtKAeymLEmZaGA6UTi9LseC0zvkCZ4GrgRdnrNFxfuwTgjT1V4xV-oJA"
+TOKEN = os.getenv("API_TOKEN")
 
 def initialize_account(token: str):
     """
@@ -15,13 +15,13 @@ def initialize_account(token: str):
         account_id (str): Идентификатор аккаунта или None в случае ошибки.
     """
     try:
-        with Client(token, timeout=10) as client:
+        with Client(token, target=INVEST_GRPC_API) as client:
             # Получаем список всех аккаунтов
-            accounts = client.accounts.get_accounts()
-            
+            accounts = client.users.get_accounts()
+
             if accounts.accounts:
                 # Если есть хотя бы один аккаунт, используем первый
-                account_id = accounts.accounts[0].id
+                account_id = accounts.accounts
                 print(f"Подключено к реальному счету: {account_id}")
                 return account_id
             else:

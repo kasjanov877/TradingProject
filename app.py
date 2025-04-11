@@ -1,7 +1,8 @@
 # main.py
 
 from flask import Flask, request, jsonify
-from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentIdType
+from tinkoff.invest import Client, OrderDirection, OrderType, InstrumentIdType, PostOrderRequest
+from tinkoff.invest.constants import INVEST_GRPC_API
 from order_monitor import monitor_order_completion  # Импортируем monitor_order_completion
 from tinkoff_api import initialize_account, TOKEN  # Импортируем функцию инициализации аккаунта и токен
 from notifier import notify_error  # Импортируем функцию для уведомлений об ошибках
@@ -16,6 +17,7 @@ from utils import get_quantity, log_trade_to_csv, check_position_exists, check_d
 app = Flask(__name__)
 account_id = None
 current_positions = {}
+lock = threading.Lock()  # Глобальная блокировка
 MAX_TICKERS = 5
 
 def place_order(client, ticker, figi, direction, expected_sum, exit_comment, price):
@@ -82,33 +84,37 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, pri
     
     order_direction = OrderDirection.ORDER_DIRECTION_BUY if direction == "buy" else OrderDirection.ORDER_DIRECTION_SELL
     
+    request = PostOrderRequest(
+        instrument_id=instrument_uid,
+        quantity=quantity,
+        direction=order_direction,
+        account_id=account_id,
+        order_type=OrderType.ORDER_TYPE_MARKET,
+        order_id=client_order_id
+)
+
     try:
-        response = client.orders.post_order(
-            instrument_id=instrument_uid,
-            quantity=quantity,
-            direction=order_direction,
-            account_id=account_id,
-            order_type=OrderType.ORDER_TYPE_MARKET,
-            order_id=client_order_id
-        )
+        response = client.orders.post_order(request)
     except Exception as e:
         return {"error": f"Ошибка при размещении ордера: {str(e)}"}, 400 
+    
     is_opening = not exit_comment
     
     if is_opening:
-        current_positions[ticker] = {
-            "figi": figi,
-            "instrument_uid": instrument_uid,
-            "open_datetime": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "quantity": quantity,
-            "client_order_id": client_order_id,
-            "exchange_order_id": response.order_id,
-            "direction": direction
-        }
+        with lock:
+            current_positions[ticker] = {
+                "figi": figi,
+                "instrument_uid": instrument_uid,
+                "open_datetime": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "quantity": quantity,
+                "client_order_id": client_order_id,
+                "exchange_order_id": response.order_id,
+                "direction": direction
+            }
     else:
         open_order_id = current_positions[ticker]["exchange_order_id"]
         threading.Thread(target=monitor_order_completion, args=(
-            client, account_id, ticker, open_order_id, response.order_id, current_positions, log_trade_to_csv, exit_comment, client_order_id
+            account_id, ticker, open_order_id, response.order_id, current_positions, log_trade_to_csv, exit_comment, client_order_id, lock
         )).start()
 
     return {"client_order_id": client_order_id, "exchange_order_id": response.order_id}, 200
@@ -132,7 +138,8 @@ def webhook():
     expected_sum, exit_comment, price = result  
 
     try:
-        with Client(TOKEN, timeout=5) as client:  
+        with Client(TOKEN, target=INVEST_GRPC_API) as client:
+            print(client.users.get_accounts()) 
             result, status = place_order(client, ticker, figi, direction, expected_sum, exit_comment, price) 
             if status == 200:
                 return jsonify(result), 200
@@ -145,7 +152,11 @@ def webhook():
 def main():
     global account_id
     account_id = initialize_account(TOKEN)
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    if account_id is None:
+        print("Не удалось инициализировать аккаунт, приложение не будет запущено.")
+        return False
+    print(f"Запуск приложения с аккаунтом: {account_id}")
+    return True
 
-if __name__ == '__main__':
-    main()
+if not main():
+    exit(1)

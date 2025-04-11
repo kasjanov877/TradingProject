@@ -1,6 +1,8 @@
 import time
 from tinkoff.invest import Client
+from tinkoff.invest.constants import INVEST_GRPC_API
 from tinkoff_api import TOKEN
+
 
 def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, current_positions, log_trade_to_csv, exit_comment=None, exit_client_order_id=None, lock=None):
     """
@@ -16,7 +18,7 @@ def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, 
         exit_comment (str or None): Комментарий выхода (например, "LongTrTake").
         exit_client_order_id (str or None): Клиентский ID ордера закрытия.
     """
-    with Client(TOKEN, timeout=10) as client:  # Создаём новый клиент внутри функции
+    with Client(TOKEN,target=INVEST_GRPC_API) as client:  # Создаём новый клиент внутри функции
         while True:
             # Получаем состояние ордера закрытия
             close_state = client.orders.get_order_state(account_id=account_id, order_id=close_order_id)
@@ -35,7 +37,7 @@ def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, 
                 # Рассчитываем валовую прибыль в зависимости от направления (buy или sell)
                 profit_gross = (exit_price - entry_price) * quantity if direction == "buy" else (entry_price - exit_price) * quantity
                 # Рассчитываем комиссию брокера (0.05% от валовой прибыли)
-                broker_fee = profit_gross * 0.0005
+                broker_fee = 0.0005 * quantity * (entry_price + exit_price)
                 # Формируем данные о сделке для записи
                 trade_data = {
                     "ticker": ticker,
