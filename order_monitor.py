@@ -2,66 +2,49 @@ import time
 from tinkoff.invest import Client
 from tinkoff.invest.constants import INVEST_GRPC_API
 from tinkoff_api import TOKEN
+from utils import save_positions_to_json, POSITIONS_FILE
+import logging
 
-
-def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, current_positions, log_trade_to_csv, exit_comment=None, exit_client_order_id=None, lock=None):
-    """
-    Мониторит выполнение ордера закрытия позиции и записывает данные о сделке в CSV.
-    
-    Аргументы:
-        account_id (str): ID аккаунта.
-        ticker (str): Тикер инструмента.
-        open_order_id (str): Биржевой ID ордера открытия.
-        close_order_id (str): Биржевой ID ордера закрытия.
-        current_positions (dict): Словарь текущих открытых позиций.
-        log_trade_to_csv (callable): Функция для записи данных о сделке в CSV.
-        exit_comment (str or None): Комментарий выхода (например, "LongTrTake").
-        exit_client_order_id (str or None): Клиентский ID ордера закрытия.
-    """
-    with Client(TOKEN,target=INVEST_GRPC_API) as client:  # Создаём новый клиент внутри функции
+def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, positions, log_trade_to_csv, exit_comment=None, exit_client_order_id=None, lock=None, broker_fee=None):
+    with Client(TOKEN, target=INVEST_GRPC_API) as client:
         while True:
-            # Получаем состояние ордера закрытия
             close_state = client.orders.get_order_state(account_id=account_id, order_id=close_order_id)
-            
-            # Проверяем, полностью ли исполнен ордер (lots_executed == lots_requested) и его статус (FILL = 1)
-            if close_state.lots_executed == close_state.lots_requested and close_state.execution_report_status == 1:  # Исполнена (FILL)
-                # Рассчитываем цену закрытия в рублях (units + nano/10^9)
-                exit_price = close_state.executed_order_price.units + close_state.executed_order_price.nano / 1_000_000_000
-                # Получаем состояние ордера открытия
+            if close_state.lots_executed == close_state.lots_requested and close_state.execution_report_status == 1:
+                exit_price = close_state.average_position_price.units + close_state.average_position_price.nano / 1_000_000_000
                 open_state = client.orders.get_order_state(account_id=account_id, order_id=open_order_id)
-                # Рассчитываем цену открытия в рублях
-                entry_price = open_state.executed_order_price.units + open_state.executed_order_price.nano / 1_000_000_000
-                # Извлекаем количество лотов и направление из текущей позиции
-                quantity = current_positions[ticker]["quantity"]
-                direction = current_positions[ticker]["direction"]
-                # Рассчитываем валовую прибыль в зависимости от направления (buy или sell)
+                entry_price = open_state.average_position_price.units + open_state.average_position_price.nano / 1_000_000_000
+                quantity = positions[ticker]["quantity"]
+                direction = positions[ticker]["direction"]
                 profit_gross = (exit_price - entry_price) * quantity if direction == "buy" else (entry_price - exit_price) * quantity
-                # Рассчитываем комиссию брокера (0.05% от валовой прибыли)
-                broker_fee = 0.0005 * quantity * (entry_price + exit_price)
-                # Формируем данные о сделке для записи
+                entry_fee = positions[ticker].get("broker_fee", 0)
+                exit_fee = broker_fee or 0
                 trade_data = {
                     "ticker": ticker,
-                    "figi": current_positions[ticker]["figi"],
-                    "instrument_uid": current_positions[ticker]["instrument_uid"],
-                    "open_datetime": current_positions[ticker]["open_datetime"],
+                    "figi": positions[ticker]["figi"],
+                    "instrument_uid": positions[ticker]["instrument_uid"],
+                    "open_datetime": positions[ticker]["open_datetime"],
                     "close_datetime": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "entry_price": entry_price,
                     "exit_price": exit_price,
                     "quantity": quantity,
-                    "broker_fee": broker_fee,
+                    "entry_broker_fee": entry_fee,
+                    "exit_broker_fee": exit_fee,
+                    "broker_fee": entry_fee + exit_fee,
                     "profit_gross": profit_gross,
-                    "profit_net": profit_gross - broker_fee,
-                    "entry_client_order_id": current_positions[ticker]["client_order_id"],
+                    "profit_net": profit_gross - (entry_fee + exit_fee),
+                    "entry_client_order_id": positions[ticker]["client_order_id"],
                     "entry_exchange_order_id": open_order_id,
                     "exit_client_order_id": exit_client_order_id,
                     "exit_exchange_order_id": close_order_id,
-                    "exitComment": exit_comment
+                    "exitComment": exit_comment,
+                    "stop_order_id": positions[ticker].get("stop_order_id", None)
                 }
-                # Записываем данные о сделке в CSV
-                log_trade_to_csv(trade_data)
-                # Удаляем закрытую позицию из current_positions
+                try:
+                    log_trade_to_csv(trade_data)
+                except Exception as e:
+                    logging.error(f"Failed to write to trades.csv: {str(e)}")
                 with lock:
-                    del current_positions[ticker]
+                    del positions[ticker]
+                    save_positions_to_json(positions)
                 break
-            # Ждем 1 секунду перед следующей проверкой состояния ордера
             time.sleep(1)
