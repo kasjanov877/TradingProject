@@ -5,3 +5,10 @@ __pycache__/
 positions.json
 trades.csv
 app.log
+requirements.txt
+tokens_figi_uid.json
+strategy.pine 
+test_webhook_open.py 
+test_webhook_stop.py 
+test_webhook_take.py  
+ 
