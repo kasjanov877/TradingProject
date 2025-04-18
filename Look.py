@@ -6,7 +6,7 @@ from tinkoff_api import TOKEN
 def main():
     with Client(TOKEN) as client:
         # Используем dir() для получения списка доступных атрибутов и методов
-        print(dir(client))
+        print(dir(client.users.get_accounts))
 
 if __name__ == "__main__":
     main()

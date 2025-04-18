@@ -182,7 +182,8 @@ def webhook():
 def main():
     global account_id
     logging.info("Starting account initialization")
-    account_id = initialize_account(TOKEN)
+    account = initialize_account(TOKEN)
+    account_id = account[0].id if account else None
     if account_id is None:
         logging.error("Failed to initialize account")
         print("Не удалось инициализировать аккаунт, приложение не будет запущено.")
