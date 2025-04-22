@@ -2,8 +2,9 @@ import logging
 import time
 import uuid
 from decimal import Decimal
-from tinkoff.invest import Client, StopOrderDirection, StopOrderType, StopOrderExpirationType, OrderExecutionReportStatus
+from tinkoff.invest import Client, StopOrderDirection, StopOrderType, StopOrderExpirationType
 from tinkoff.invest.utils import decimal_to_quotation
+from notifier import notify_error
 
 def place_stop_loss(client: Client, account_id: str, instrument_uid: str, quantity: int, stop_loss_price, direction: str):
     """
@@ -71,50 +72,66 @@ def handle_stop_close(client: Client, account_id: str, ticker: str, figi: str, p
         notify_error(ticker, "N/A", "StopOrderError", f"No stop_order_id for {ticker}. Check Tinkoff terminal.")
         return False, None
 
+    # Проверить, открыта ли еще позиция с несколькими попытками
     max_attempts = 3
     attempt = 0
+    is_position_open = True  # По умолчанию предполагаем, что позиция открыта
     while attempt < max_attempts:
         try:
-            stop_state = client.orders.get_order_state(account_id=account_id, order_id=stop_order_id)
-            if stop_state.execution_report_status == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL:
-                logging.info(f"Position {ticker} closed by broker: exitComment={exit_comment}, stop_order_id={stop_order_id}")
-                exit_price = stop_state.average_position_price.units + stop_state.average_position_price.nano / 1_000_000_000
-                exit_broker_fee = stop_state.executed_commission.units + stop_state.executed_commission.nano / 1_000_000_000
-                trade_data = {
-                    "ticker": ticker,
-                    "figi": positions[ticker]["figi"],
-                    "instrument_uid": positions[ticker]["instrument_uid"],
-                    "open_datetime": positions[ticker]["open_datetime"],
-                    "close_datetime": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "entry_price": positions[ticker].get("entry_price", 0),
-                    "exit_price": exit_price,
-                    "quantity": positions[ticker]["quantity"],
-                    "entry_broker_fee": positions[ticker].get("broker_fee", 0),
-                    "exit_broker_fee": exit_broker_fee,
-                    "broker_fee": positions[ticker].get("broker_fee", 0) + exit_broker_fee,
-                    "profit_gross": 0,  # Требует уточнения
-                    "profit_net": 0,
-                    "entry_client_order_id": positions[ticker]["client_order_id"],
-                    "entry_exchange_order_id": positions[ticker]["exchange_order_id"],
-                    "exit_client_order_id": None,
-                    "exit_exchange_order_id": stop_order_id,
-                    "exitComment": exit_comment,
-                    "stop_order_id": stop_order_id
-                }
-                return True, trade_data
-            else:
-                logging.info(f"Stop-order {stop_order_id} for {ticker} not executed, status: {stop_state.execution_report_status}, attempt {attempt + 1}")
-                attempt += 1
-                if attempt < max_attempts:
-                    time.sleep(1)
-                continue
+            portfolio = client.operations.get_portfolio(account_id=account_id)
+            is_position_open = any(pos.figi == figi for pos in portfolio.positions)
+            break  # Успешный запрос, выходим из цикла
         except Exception as e:
-            logging.error(f"Error checking stop-order {stop_order_id} for {ticker}: {str(e)}, attempt {attempt + 1}")
+            logging.error(f"Error checking portfolio for {ticker}: {str(e)}, attempt {attempt + 1}")
             attempt += 1
             if attempt < max_attempts:
                 time.sleep(1)
             continue
 
     # После всех попыток
-    notify_error(ticker, "N/A", "StopOrderError", f"Stop-order for {ticker} not executed. Stop-order ID: {stop_order_id}, Status: Unknown or Error. Check Tinkoff terminal.")
-    return False, None
+    if attempt >= max_attempts:
+        logging.error(f"Failed to check portfolio for {ticker} after {max_attempts} attempts")
+        notify_error(ticker, "N/A", "StopOrderError", f"Failed to check portfolio for {ticker}. Check Tinkoff terminal.")
+        return False, None
+
+    if is_position_open:
+        # Позиция все еще открыта, стоп-приказ не исполнен
+        logging.error(f"Position {ticker} still open, stop order not executed")
+        notify_error(ticker, "N/A", "StopOrderError", f"Position {ticker} still open, stop order not executed")
+        return False, None
+    else:
+        # Позиция закрыта, предполагаем, что стоп-приказ был исполнен
+        logging.info(f"Position {ticker} closed, assuming stop order was executed")
+        # Формируем trade_data
+        entry_price = positions[ticker].get("entry_price", 0)
+        exit_price = positions[ticker]["stop_loss_price"]  # Используем stop price как цену исполнения
+        quantity = positions[ticker]["quantity"]
+        lot_size = positions[ticker].get("lot_size", 1)  # По умолчанию 1, если не указано
+        total_shares = quantity * lot_size
+        entry_broker_fee = positions[ticker].get("broker_fee", 0)
+        exit_broker_fee = 0.0005 * exit_price * total_shares  # Комиссия 0.05% от размера позиции
+        broker_fee = entry_broker_fee + exit_broker_fee
+        profit_gross = (exit_price - entry_price) * total_shares  # Валовая прибыль
+        profit_net = profit_gross - broker_fee  # Чистая прибыль с вычетом комиссий
+        trade_data = {
+            "ticker": ticker,
+            "figi": positions[ticker]["figi"],
+            "instrument_uid": positions[ticker]["instrument_uid"],
+            "open_datetime": positions[ticker]["open_datetime"],
+            "close_datetime": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "quantity": quantity,
+            "entry_broker_fee": entry_broker_fee,
+            "exit_broker_fee": exit_broker_fee,
+            "broker_fee": broker_fee,
+            "profit_gross": profit_gross,
+            "profit_net": profit_net,
+            "entry_client_order_id": positions[ticker]["client_order_id"],
+            "entry_exchange_order_id": positions[ticker]["exchange_order_id"],
+            "exit_client_order_id": None,
+            "exit_exchange_order_id": stop_order_id,
+            "exitComment": exit_comment,
+            "stop_order_id": stop_order_id
+        }
+        return True, trade_data
