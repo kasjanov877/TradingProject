@@ -5,22 +5,21 @@ import logging
 
 POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "positions.json")
 
-def get_quantity(expected_sum, price, lot):
+def get_quantity(expected_sum, signal_price, lot):
     try:
-        cost_per_lot = price * lot
+        cost_per_lot = signal_price * lot
         quantity = int(expected_sum / cost_per_lot)
         return quantity if quantity > 0 else 0
     except Exception as e:
-        print(f"Ошибка при расчёте количества: {str(e)}")
+        logging.error(f"Ошибка при расчёте количества: {str(e)}")
         return 0
 
 def log_trade_to_csv(trade_data, csv_file="trades.csv"):
     fieldnames = [
-        "ticker", "figi", "instrument_uid", "open_datetime", "close_datetime",
-        "entry_price", "exit_price", "quantity", "entry_broker_fee", "exit_broker_fee",
+        "ticker", "figi", "exitComment", "instrument_uid", "open_datetime", "close_datetime",
+        "quantity", "entry_signal_price", "exit_signal_price", "entry_broker_fee", "exit_broker_fee",
         "broker_fee", "profit_gross", "profit_net", "entry_client_order_id",
-        "entry_exchange_order_id", "exit_client_order_id", "exit_exchange_order_id",
-        "exitComment", "stop_order_id"
+        "entry_exchange_order_id", "exit_client_order_id"
     ]
     file_exists = os.path.exists(csv_file)
     with open(csv_file, 'a', newline='', encoding='utf-8') as csvfile:

@@ -30,9 +30,9 @@ account_id = None
 lock = threading.Lock()
 MAX_TICKERS = 5
 
-def place_order(client, ticker, figi, direction, expected_sum, exit_comment, price, stop_loss_price, positions):
+def place_order(client, ticker, figi, direction, expected_sum, exit_comment, signal_price, stop_loss_price, positions):
     logging.info(f"Entering place_order: ticker={ticker}, figi={figi}, direction={direction}, "
-                 f"expected_sum={expected_sum}, exit_comment={exit_comment}, price={price}, stop_loss_price={stop_loss_price}")
+                 f"expected_sum={expected_sum}, exit_comment={exit_comment}, signal_price={signal_price}, stop_loss_price={stop_loss_price}")
 
     if not check_position_exists(ticker, positions) and not can_open_position(positions, MAX_TICKERS):
         logging.error(f"Exceeded max tickers limit: {MAX_TICKERS}")
@@ -68,8 +68,8 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, pri
         if check_position_exists(ticker, positions):
             logging.error(f"Position already open for ticker: {ticker}")
             return {"error": "Позиция уже открыта"}, 400
-        quantity = get_quantity(expected_sum, price, lot)
-        logging.info(f"Calculated quantity: {quantity} for expected_sum={expected_sum}, price={price}, lot={lot}")
+        quantity = get_quantity(expected_sum, signal_price, lot)
+        logging.info(f"Calculated quantity: {quantity} for expected_sum={expected_sum}, signal_price={signal_price}, lot={lot}")
         if quantity == 0:
             logging.error("Quantity is 0")
             return {"error": "Количество лотов равно 0"}, 400
@@ -101,8 +101,9 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, pri
             order_id=client_order_id
         )
         logging.info(f"Order placed successfully: order_id={response.order_id}")
-        broker_fee = response.executed_commission.units + response.executed_commission.nano / 1_000_000_000
-        logging.info(f"Broker fee for order {response.order_id}: {broker_fee}")
+        entry_broker_fee = response.executed_commission.units + response.executed_commission.nano / 1_000_000_000
+        logging.info(f"PostOrder commission: units={response.executed_commission.units}, nano={response.executed_commission.nano}")
+        logging.info(f"Entry broker fee for order {response.order_id}: {entry_broker_fee}")
     except Exception as e:
         logging.error(f"Error placing order: {str(e)}")
         return {"error": f"Ошибка при размещении ордера: {str(e)}"}, 400
@@ -125,22 +126,27 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, pri
                 "client_order_id": client_order_id,
                 "exchange_order_id": response.order_id,
                 "direction": direction,
-                "broker_fee": broker_fee,
+                "signal_price": signal_price,
+                "entry_broker_fee": entry_broker_fee,
                 "stop_loss_price": stop_loss_price,
                 "stop_order_id": stop_order_id,
                 "exitComment": exit_comment
             }
             save_positions_to_json(positions)
-        logging.info(f"Opened position: ticker={ticker}, quantity={quantity}, direction={direction}, broker_fee={broker_fee}, stop_order_id={stop_order_id}, exitComment={exit_comment}")
+        logging.info(f"Opened position: ticker={ticker}, quantity={quantity}, direction={direction}, signal_price={signal_price}, entry_broker_fee={entry_broker_fee}, stop_order_id={stop_order_id}, exitComment={exit_comment}")
     else:
         open_order_id = positions[ticker]["exchange_order_id"]
+        turnover = quantity * signal_price * lot
+        exit_broker_fee = turnover * 0.0005  # 0.05% для закрытия
+        broker_fee = positions[ticker]["entry_broker_fee"] + exit_broker_fee
+        logging.info(f"Calculated exit_broker_fee (0.05% of turnover {turnover}): {exit_broker_fee}, total broker_fee: {broker_fee}")
         logging.info(f"Starting monitor for closing order: ticker={ticker}, open_order_id={open_order_id}")
         threading.Thread(target=monitor_order_completion, args=(
             account_id, ticker, open_order_id, response.order_id, positions, 
             log_trade_to_csv, exit_comment, client_order_id, lock, broker_fee
         )).start()
 
-    return {"client_order_id": client_order_id, "exchange_order_id": response.order_id, "broker_fee": broker_fee}, 200
+    return {"client_order_id": client_order_id, "exchange_order_id": response.order_id, "entry_broker_fee": entry_broker_fee if is_opening else broker_fee}, 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -151,27 +157,27 @@ def webhook():
     figi = data.get("figi")
     direction = data.get("direction")
     expected_sum = data.get("expected_sum")
-    price = data.get("price")
+    signal_price = data.get("price")
     stop_loss_price = data.get("stop_loss_price")
     exit_comment = data.get("exitComment")
 
     logging.info(f"Parsed webhook: ticker={ticker}, figi={figi}, direction={direction}, "
-                 f"expected_sum={expected_sum}, price={price}, stop_loss_price={stop_loss_price}, exit_comment={exit_comment}")
+                 f"expected_sum={expected_sum}, signal_price={signal_price}, stop_loss_price={stop_loss_price}, exit_comment={exit_comment}")
 
-    is_valid, result = validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, price, stop_loss_price)
+    is_valid, result = validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, signal_price, stop_loss_price)
     if not is_valid:
         logging.error(f"Validation failed: {result}")
         return jsonify({"error": result}), 400
 
-    expected_sum, exit_comment, price, stop_loss_price = result
-    logging.info(f"Validated data: expected_sum={expected_sum}, exit_comment={exit_comment}, price={price}, stop_loss_price={stop_loss_price}")
+    expected_sum, exit_comment, signal_price, stop_loss_price = result
+    logging.info(f"Validated data: expected_sum={expected_sum}, exit_comment={exit_comment}, signal_price={signal_price}, stop_loss_price={stop_loss_price}")
 
     try:
         with Client(TOKEN, target=INVEST_GRPC_API) as client:
             logging.info("Initialized Tinkoff client")
             positions = load_positions_from_json()
             logging.info(f"Loaded positions: {positions}")
-            result, status = place_order(client, ticker, figi, direction, expected_sum, exit_comment, price, stop_loss_price, positions)
+            result, status = place_order(client, ticker, figi, direction, expected_sum, exit_comment, signal_price, stop_loss_price, positions)
             logging.info(f"place_order result: {result}, status: {status}")
             return jsonify(result), status
     except Exception as e:

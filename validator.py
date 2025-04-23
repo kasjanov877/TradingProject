@@ -1,6 +1,6 @@
 from notifier import notify_error
 
-def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, price, stop_loss_price):
+def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, signal_price, stop_loss_price):
     missing_or_invalid = []
     if not ticker:
         missing_or_invalid.append("ticker")
@@ -9,7 +9,12 @@ def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, p
     if not direction:
         missing_or_invalid.append("direction")
 
-    valid_exit_comments = [None, "OpenLong", "OpenShort", "LongStop", "ShortStop", "LongTrTake", "ShortTrTake"]
+    if exit_comment is None or exit_comment == "":
+        error_message = "exitComment is required and cannot be empty"
+        notify_error(ticker or "Unknown", expected_sum or "N/A", "MissingExitComment", error_message)
+        return False, error_message
+
+    valid_exit_comments = ["OpenLong", "OpenShort", "LongStop", "ShortStop", "LongTrTake", "ShortTrTake"]
     if exit_comment not in valid_exit_comments:
         error_message = f"Недопустимое значение exitComment: {exit_comment}. Допустимые: {valid_exit_comments}"
         notify_error(ticker or "Unknown", expected_sum or "N/A", "InvalidExitComment", error_message)
@@ -23,15 +28,15 @@ def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, p
     else:
         if not expected_sum:
             missing_or_invalid.append("expected_sum")
-        if not price:
-            missing_or_invalid.append("price")
+        if not signal_price:
+            missing_or_invalid.append("signal_price")
         if missing_or_invalid:
             error_message = f"Недопустимые значения в полях для открытия: {', '.join(missing_or_invalid)}"
             notify_error(ticker or "Unknown", expected_sum or "N/A", "MissingData", error_message)
             return False, error_message
         try:
             expected_sum = int(expected_sum)
-            price = float(price)
+            signal_price = float(signal_price)
         except ValueError as e:
             notify_error(ticker, expected_sum or "N/A", "ValueError", str(e))
             return False, f"Ошибка валидации: {str(e)}"
@@ -41,4 +46,4 @@ def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, p
         notify_error(ticker or "Unknown", expected_sum or "N/A", "InvalidDirection", error_message)
         return False, error_message
 
-    return True, (expected_sum, exit_comment, price, stop_loss_price)
+    return True, (expected_sum, exit_comment, signal_price, stop_loss_price)

@@ -10,5 +10,6 @@ tokens_figi_uid.json
 strategy.pine 
 test_webhook_open.py 
 test_webhook_stop.py 
-test_webhook_take.py  
- 
+test_webhook_take.py test_webhook_open_Serv.py 
+test_webhook_stop_Serv.py 
+test_webhook_take_Serv.py
