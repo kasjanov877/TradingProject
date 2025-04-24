@@ -1,7 +1,9 @@
 import json
 import os
 import logging
+from decimal import Decimal
 from tinkoff.invest import Client, InstrumentIdType
+from utils import quotation_to_decimal
 
 def get_instrument_data(client: Client, figi: str, ticker: str):
     """
@@ -31,8 +33,9 @@ def get_instrument_data(client: Client, figi: str, ticker: str):
         if figi in instrument_data:
             instrument_uid = instrument_data[figi]["instrument_uid"]
             lot = instrument_data[figi]["lot"]
-            logging.info(f"Found instrument in cache: figi={figi}, uid={instrument_uid}, lot={lot}")
-            return instrument_uid, lot
+            min_price_increment = Decimal(instrument_data[figi]["min_price_increment"])
+            logging.info(f"Found instrument in cache: figi={figi}, uid={instrument_uid}, lot={lot}, min_price_increment={min_price_increment}")
+            return instrument_uid, lot, min_price_increment
 
         # Запрос к API
         instrument = client.instruments.get_instrument_by(
@@ -44,19 +47,24 @@ def get_instrument_data(client: Client, figi: str, ticker: str):
 
         instrument_uid = instrument.uid
         lot = instrument.lot
+        min_price_increment = quotation_to_decimal(instrument.min_price_increment)
+        if min_price_increment is None:
+            logging.error(f"min_price_increment is None for FIGI: {figi}")
+            return {"error": f"Не удалось получить min_price_increment для FIGI {figi}"}, 400
         instrument_data[figi] = {
             "ticker": ticker,
             "instrument_uid": instrument_uid,
-            "lot": lot
+            "lot": lot,
+            "min_price_increment": str(min_price_increment)  # Сохраняем как строку для JSON
         }
 
         # Сохранение кэша
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
             json.dump(instrument_data, json_file, ensure_ascii=False, indent=4)
-        logging.info(f"Saved new instrument data: figi={figi}, uid={instrument_uid}, lot={lot}")
+        logging.info(f"Saved new instrument data: figi={figi}, uid={instrument_uid}, lot={lot}, min_price_increment={min_price_increment}")
 
-        return instrument_uid, lot
+        return instrument_uid, lot, min_price_increment
 
     except Exception as e:
         logging.error(f"Error fetching instrument data for FIGI {figi}: {str(e)}")
-        return None, None
+        return None, None, None

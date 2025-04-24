@@ -30,6 +30,8 @@ def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, s
             missing_or_invalid.append("expected_sum")
         if not signal_price:
             missing_or_invalid.append("signal_price")
+        if stop_loss_price is None:
+            missing_or_invalid.append("stop_loss_price")
         if missing_or_invalid:
             error_message = f"Недопустимые значения в полях для открытия: {', '.join(missing_or_invalid)}"
             notify_error(ticker or "Unknown", expected_sum or "N/A", "MissingData", error_message)
@@ -37,6 +39,8 @@ def validate_webhook_data(ticker, figi, direction, expected_sum, exit_comment, s
         try:
             expected_sum = int(expected_sum)
             signal_price = float(signal_price)
+            if stop_loss_price is not None:
+                stop_loss_price = float(stop_loss_price)
         except ValueError as e:
             notify_error(ticker, expected_sum or "N/A", "ValueError", str(e))
             return False, f"Ошибка валидации: {str(e)}"

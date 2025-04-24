@@ -14,6 +14,7 @@ import threading
 import time
 import os
 from utils import get_quantity, log_trade_to_csv, check_position_exists, check_direction, can_open_position, load_positions_from_json, save_positions_to_json, POSITIONS_FILE
+from decimal import Decimal, ROUND_DOWN
 
 # Настройка логирования
 logging.basicConfig(
@@ -38,11 +39,32 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, sig
         logging.error(f"Exceeded max tickers limit: {MAX_TICKERS}")
         return {"error": f"Превышен лимит одновременных тикеров ({MAX_TICKERS})"}, 400
 
-    instrument_uid, lot = get_instrument_data(client, figi, ticker)
+    instrument_uid, lot, min_price_increment = get_instrument_data(client, figi, ticker)
     if instrument_uid is None or lot is None:
         logging.error(f"Failed to get instrument data for FIGI: {figi}")
         return {"error": f"Не удалось получить данные инструмента для FIGI {figi}"}, 400
 
+    # Проверка min_price_increment
+    if min_price_increment is None:
+         logging.error(f"min_price_increment is None for FIGI: {figi}")
+         return {"error": f"Не удалось получить min_price_increment для FIGI {figi}"}, 400
+
+    # Округление цен
+    try:
+        signal_price = Decimal(str(signal_price))
+        signal_price = (signal_price / min_price_increment).quantize(Decimal('1'), rounding=ROUND_DOWN) * min_price_increment
+        signal_price = float(signal_price)
+        if stop_loss_price is not None:
+            stop_loss_price = Decimal(str(stop_loss_price))
+            stop_loss_price = (stop_loss_price / min_price_increment).quantize(Decimal('1'), rounding=ROUND_DOWN) * min_price_increment
+            stop_loss_price = float(stop_loss_price)
+    except ValueError as e:
+        logging.error(f"Invalid price format: {str(e)}")
+        return {"error": f"Неверный формат цены: {str(e)}"}, 400
+    
+    logging.info(f"Rounded signal_price to {signal_price}, stop_loss_price to {stop_loss_price if stop_loss_price is not None else 'None'} using min_price_increment={min_price_increment}")
+
+    # Расчёт quantity после округления
     if exit_comment in ["LongStop", "ShortStop", "LongTrTake", "ShortTrTake"]:
         if not check_position_exists(ticker, positions):
             logging.error(f"Attempt to close non-existent position for ticker: {ticker}")
@@ -73,7 +95,7 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, sig
         if quantity == 0:
             logging.error("Quantity is 0")
             return {"error": "Количество лотов равно 0"}, 400
-
+        
     if not isinstance(quantity, int):
         logging.error(f"Invalid quantity type: expected int, got {type(quantity)}")
         return {"error": f"Неверный тип quantity: ожидается int, получено {type(quantity)}"}, 400

@@ -2,6 +2,7 @@ import csv
 import os
 import json
 import logging
+from decimal import Decimal
 
 POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "positions.json")
 
@@ -58,3 +59,9 @@ def save_positions_to_json(positions, file_path=POSITIONS_FILE):
         logging.info(f"Saved positions to {file_path}: {positions}")
     except Exception as e:
         logging.error(f"Error saving positions to {file_path}: {str(e)}")
+
+def quotation_to_decimal(quotation):
+    """
+    Преобразует Quotation в Decimal.
+    """
+    return Decimal(quotation.units) + Decimal(quotation.nano) / Decimal(1_000_000_000)
