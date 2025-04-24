@@ -4,6 +4,7 @@ import logging
 from decimal import Decimal
 from tinkoff.invest import Client, InstrumentIdType
 from utils import quotation_to_decimal
+from utils import TOKENS_FIGI_UID_FILE
 
 def get_instrument_data(client: Client, figi: str, ticker: str):
     """
@@ -17,17 +18,17 @@ def get_instrument_data(client: Client, figi: str, ticker: str):
     Returns:
         tuple: (instrument_uid, lot) или (None, None) при ошибке.
     """
-    json_file_path = "tokens_figi_uid.json"
+    
     instrument_data = {}
 
     try:
         # Загрузка кэша
-        if os.path.exists(json_file_path):
-            with open(json_file_path, 'r', encoding='utf-8') as json_file:
+        if os.path.exists(TOKENS_FIGI_UID_FILE):
+            with open(TOKENS_FIGI_UID_FILE, 'r', encoding='utf-8') as json_file:
                 instrument_data = json.load(json_file)
-            logging.info(f"Loaded instrument data from {json_file_path}")
+            logging.info(f"Loaded instrument data from {TOKENS_FIGI_UID_FILE}")
         else:
-            logging.info(f"No instrument data file found at {json_file_path}, starting with empty data")
+            logging.info(f"No instrument data file found at {TOKENS_FIGI_UID_FILE}, starting with empty data")
 
         # Проверка кэша
         if figi in instrument_data:
@@ -59,7 +60,7 @@ def get_instrument_data(client: Client, figi: str, ticker: str):
         }
 
         # Сохранение кэша
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
+        with open(TOKENS_FIGI_UID_FILE, 'w', encoding='utf-8') as json_file:
             json.dump(instrument_data, json_file, ensure_ascii=False, indent=4)
         logging.info(f"Saved new instrument data: figi={figi}, uid={instrument_uid}, lot={lot}, min_price_increment={min_price_increment}")
 

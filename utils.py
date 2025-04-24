@@ -5,6 +5,7 @@ import logging
 from decimal import Decimal
 
 POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "positions.json")
+TOKENS_FIGI_UID_FILE = os.path.join(os.path.dirname(__file__), "tokens_figi_uid.json")
 
 def get_quantity(expected_sum, signal_price, lot):
     try:
