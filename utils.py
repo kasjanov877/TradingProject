@@ -19,7 +19,7 @@ def get_quantity(expected_sum, signal_price, lot):
 def log_trade_to_csv(trade_data, csv_file="trades.csv"):
     fieldnames = [
         "ticker", "figi", "exitComment", "instrument_uid", "open_datetime", "close_datetime",
-        "quantity", "entry_signal_price", "exit_signal_price", "entry_broker_fee", "exit_broker_fee",
+        "quantity", "entry_signal_price", "exit_signal_price", "", "exit_broker_fee",
         "broker_fee", "profit_gross", "profit_net", "entry_client_order_id",
         "entry_exchange_order_id", "exit_client_order_id"
     ]

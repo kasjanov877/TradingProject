@@ -1,5 +1,5 @@
 # main.py
-import logging
+import logging 
 from flask import Flask, request, jsonify
 from tinkoff.invest import Client, OrderDirection, OrderType
 from tinkoff.invest.constants import INVEST_GRPC_API
@@ -152,7 +152,7 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, sig
                 "exitComment": exit_comment
             }
             save_positions_to_json(positions)
-        logging.info(f"Opened position: ticker={ticker}, quantity={quantity}, direction={direction}, signal_price={signal_price}, entry_broker_fee={entry_broker_fee}, stop_order_id={stop_order_id}, exitComment={exit_comment}")
+        logging.info(f"Opened position: ticker={ticker}, quantity={quantity}, direction={direction}, signal_price={signal_price}, stop_order_id={stop_order_id}, exitComment={exit_comment}")
     else:
         open_order_id = positions[ticker]["exchange_order_id"]
         logging.info(f"Starting monitor for closing order: ticker={ticker}, open_order_id={open_order_id}")

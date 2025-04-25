@@ -25,9 +25,9 @@ def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, 
                 lot = positions[ticker].get("lot", 1)  # Assuming lot is available in positions, default to 1 if not present
                 
                 # Calculate commissions
-                entry_broker_fee = entry_signal_price * quantity * 0.0005  # Example commission rate of 0.05%
+                 = entry_signal_price * quantity * 0.0005  # Example commission rate of 0.05%
                 exit_broker_fee = exit_signal_price * quantity * 0.0005   # Example commission rate of 0.05%
-                broker_fee = entry_broker_fee + exit_broker_fee
+                broker_fee =  + exit_broker_fee
                 
                 # Calculate profit
                 profit_gross = (exit_signal_price - entry_signal_price) * quantity * lot if direction == "buy" else (entry_signal_price - exit_signal_price) * quantity * lot
@@ -43,7 +43,7 @@ def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, 
                     "entry_signal_price": entry_signal_price,
                     "exit_signal_price": exit_signal_price,
                     "quantity": quantity,
-                    "entry_broker_fee": entry_broker_fee,
+                    "": ,
                     "exit_broker_fee": exit_broker_fee,
                     "broker_fee": broker_fee,
                     "profit_gross": profit_gross,
