@@ -5,14 +5,16 @@ from tinkoff_api import TOKEN
 from utils import save_positions_to_json, POSITIONS_FILE
 import logging
 
-def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, positions, log_trade_to_csv, exit_comment=None, exit_client_order_id=None, lock=None):
+def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, positions, log_trade_to_csv, exit_comment=None, exit_client_order_id=None, lock=None, exit_signal_price=None):
+    if exit_signal_price is None:
+        logging.error(f"Missing exit_signal_price for ticker {ticker}")
+        return
+
     with Client(TOKEN, target=INVEST_GRPC_API) as client:
         while True:
             close_state = client.orders.get_order_state(account_id=account_id, order_id=close_order_id)
             if close_state.lots_executed == close_state.lots_requested and close_state.execution_report_status == 1:
-                exit_signal_price = close_state.average_position_price.units + close_state.average_position_price.nano / 1_000_000_000
-                open_state = client.orders.get_order_state(account_id=account_id, order_id=open_order_id)
-                entry_signal_price = open_state.average_position_price.units + open_state.average_position_price.nano / 1_000_000_000
+                entry_signal_price = positions[ticker]["signal_price"]
                 quantity = positions[ticker]["quantity"]
                 direction = positions[ticker]["direction"]
                 lot = positions[ticker].get("lot", 1)  # Assuming lot is available in positions, default to 1 if not present
