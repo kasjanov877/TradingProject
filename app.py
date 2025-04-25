@@ -161,7 +161,7 @@ def place_order(client, ticker, figi, direction, expected_sum, exit_comment, sig
             log_trade_to_csv, exit_comment, client_order_id, lock, signal_price
         )).start()
 
-    return {"client_order_id": client_order_id, "exchange_order_id": response.order_id, "entry_broker_fee": entry_broker_fee if is_opening else broker_fee}, 200
+    return {"client_order_id": client_order_id, "exchange_order_id": response.order_id }, 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
