@@ -12,7 +12,12 @@ def monitor_order_completion(account_id, ticker, open_order_id, close_order_id, 
 
     with Client(TOKEN, target=INVEST_GRPC_API) as client:
         while True:
-            close_state = client.orders.get_order_state(account_id=account_id, order_id=close_order_id)
+            try:
+                close_state = client.orders.get_order_state(account_id=account_id, order_id=close_order_id)
+            except Exception as e:
+                logging.error(f"Failed to get order state for {close_order_id}: {str(e)}")
+                time.sleep(5)
+                continue
             if close_state.lots_executed == close_state.lots_requested and close_state.execution_report_status == 1:
                 entry_signal_price = positions[ticker]["signal_price"]
                 quantity = positions[ticker]["quantity"]
