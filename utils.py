@@ -29,7 +29,7 @@ def log_trade_to_csv(trade_data, csv_file="trades.csv"):
         "quantity",
         "entry_signal_price",
         "exit_signal_price",
-        "",
+        "entry_broker_fee",
         "exit_broker_fee",
         "broker_fee",
         "profit_gross",
