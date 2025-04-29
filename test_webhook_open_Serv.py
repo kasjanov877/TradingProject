@@ -1,4 +1,5 @@
 import requests
+
 url = url = "https://ordertrans.ru/webhook"
 data = {
     "ticker": "SBER",
@@ -7,8 +8,10 @@ data = {
     "expected_sum": 3300,
     "price": 305,
     "stop_loss_price": 295,
-    "exitComment": "OpenLong"
+    "exitComment": "OpenLong",
 }
 response = requests.post(url, json=data)
+
 print(f"Status: {response.status_code}")
+
 print(f"Response: {response.json()}")
