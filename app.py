@@ -85,11 +85,12 @@ def place_order(
 
     # Округление цен
     try:
-        signal_price = Decimal(str(signal_price))
-        signal_price = (signal_price / min_price_increment).quantize(
-            Decimal("1"), rounding=ROUND_DOWN
-        ) * min_price_increment
-        signal_price = float(signal_price)
+        if signal_price is not None:
+            signal_price = Decimal(str(signal_price))
+            signal_price = (signal_price / min_price_increment).quantize(
+                Decimal("1"), rounding=ROUND_DOWN
+            ) * min_price_increment
+            signal_price = float(signal_price)
         if stop_loss_price is not None:
             stop_loss_price = Decimal(str(stop_loss_price))
             stop_loss_price = (stop_loss_price / min_price_increment).quantize(

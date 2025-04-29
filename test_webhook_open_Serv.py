@@ -6,8 +6,8 @@ data = {
     "figi": "BBG004730N88",
     "direction": "buy",
     "expected_sum": 3300,
-    "price": 305,
-    "stop_loss_price": 295,
+    "price": 311,
+    "stop_loss_price": 311.25,
     "exitComment": "OpenLong",
 }
 response = requests.post(url, json=data)

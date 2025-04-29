@@ -19,6 +19,7 @@ def get_quantity(expected_sum, signal_price, lot):
 
 
 def log_trade_to_csv(trade_data, csv_file="trades.csv"):
+    # Список полей
     fieldnames = [
         "ticker",
         "figi",
@@ -39,12 +40,16 @@ def log_trade_to_csv(trade_data, csv_file="trades.csv"):
         "exit_client_order_id",
         "exit_exchange_order_id",
     ]
-    file_exists = os.path.exists(csv_file)
-    with open(csv_file, "a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(trade_data)
+    try:
+        file_exists = os.path.exists(csv_file)
+        with open(csv_file, "a", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(trade_data)
+    except Exception as e:
+        print(f"Ошибка при записи в {csv_file}: {str(e)}")
+        raise
 
 
 def check_position_exists(ticker, positions):
