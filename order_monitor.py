@@ -52,7 +52,7 @@ def monitor_order_completion(
                 exit_broker_fee = (
                     exit_signal_price * quantity * 0.0005
                 )  # Example commission rate of 0.05%
-                broker_fee = +exit_broker_fee
+                broker_fee = entry_broker_fee + exit_broker_fee
 
                 # Calculate profit
                 profit_gross = (
