@@ -3,6 +3,7 @@ from tinkoff.invest import Client
 from tinkoff.invest.constants import INVEST_GRPC_API
 from tinkoff_api import TOKEN
 from utils import save_positions_to_json, POSITIONS_FILE
+from notifier import notify_error
 import logging
 
 
@@ -86,6 +87,12 @@ def monitor_order_completion(
                     log_trade_to_csv(trade_data)
                 except Exception as e:
                     logging.error(f"Failed to write to trades.csv: {str(e)}")
+                    notify_error(
+                        ticker,
+                        "N/A",
+                        "CsvError",
+                        f"Failed to write to trades.csv: {str(e)}",
+                    )
                 with lock:
                     del positions[ticker]
                     save_positions_to_json(positions)

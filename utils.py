@@ -19,7 +19,6 @@ def get_quantity(expected_sum, signal_price, lot):
 
 
 def log_trade_to_csv(trade_data, csv_file="trades.csv"):
-    # Список полей
     fieldnames = [
         "ticker",
         "figi",
@@ -41,14 +40,18 @@ def log_trade_to_csv(trade_data, csv_file="trades.csv"):
         "exit_exchange_order_id",
     ]
     try:
+        logging.info(
+            f"Attempting to write trade data to {csv_file}:\n{json.dumps(trade_data, indent=2)}"
+        )
         file_exists = os.path.exists(csv_file)
         with open(csv_file, "a", newline="", encoding="utf-8") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
                 writer.writeheader()
             writer.writerow(trade_data)
+        logging.info(f"Successfully wrote trade data to {csv_file}")
     except Exception as e:
-        print(f"Ошибка при записи в {csv_file}: {str(e)}")
+        logging.error(f"Ошибка при записи в {csv_file}: {str(e)}")
         raise
 
 
@@ -69,7 +72,9 @@ def load_positions_from_json(file_path=POSITIONS_FILE):
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 positions = json.load(f)
-                logging.info(f"Loaded positions from {file_path}: {positions}")
+                logging.info(
+                    f"Loaded positions from {file_path}:\n{json.dumps(positions, indent=2)}"
+                )
                 return positions
         logging.info(
             f"No positions file found at {file_path}, returning empty positions"
@@ -85,7 +90,9 @@ def save_positions_to_json(positions, file_path=POSITIONS_FILE):
         logging.info(f"Attempting to save positions to {file_path}, cwd: {os.getcwd()}")
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=4)
-        logging.info(f"Saved positions to {file_path}: {positions}")
+        logging.info(
+            f"Saved positions to {file_path}:\n{json.dumps(positions, indent=2)}"
+        )
     except Exception as e:
         logging.error(f"Error saving positions to {file_path}: {str(e)}")
 

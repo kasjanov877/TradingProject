@@ -5,6 +5,7 @@ __pycache__/
 positions.json
 trades.csv
 app.log
+encrypted_token.bin
 requirements.txt
 tokens_figi_uid.json
 strategy.pine 

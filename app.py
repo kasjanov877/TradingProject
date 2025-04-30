@@ -1,4 +1,5 @@
 # main.py
+# Импорт необходимых библиотек и модулей
 import logging
 from flask import Flask, request, jsonify
 from tinkoff.invest import Client, OrderDirection, OrderType
@@ -8,7 +9,6 @@ from tinkoff_api import initialize_account, TOKEN
 from notifier import notify_error
 from validator import validate_webhook_data
 from instrument_manager import get_instrument_data
-from stop_order_manager import place_stop_loss, handle_stop_close
 import uuid
 import threading
 import time
@@ -23,9 +23,10 @@ from utils import (
     save_positions_to_json,
     POSITIONS_FILE,
 )
+import json
 from decimal import Decimal, ROUND_DOWN
 
-# Настройка логирования
+# Настройка логирования для отслеживания событий и ошибок
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -35,12 +36,14 @@ logging.basicConfig(
     ],
 )
 
+# Инициализация Flask-приложения и глобальных переменных
 app = Flask(__name__)
 account_id = None
 lock = threading.Lock()
-MAX_TICKERS = 5
+MAX_TICKERS = 5  # Максимальное количество одновременных тикеров
 
 
+# Функция для размещения ордеров (открытие и закрытие позиций)
 def place_order(
     client,
     ticker,
@@ -49,99 +52,84 @@ def place_order(
     expected_sum,
     exit_comment,
     signal_price,
-    stop_loss_price,
     positions,
 ):
+    # Логирование входных параметров ордера
     logging.info(
-        f"""
-        Entering place_order:
-        ticker={ticker},
-        figi={figi},
-        direction={direction},
-        expected_sum={expected_sum},
-        exit_comment={exit_comment},
-        signal_price={signal_price},
-        stop_loss_price={stop_loss_price}
-    """.strip()
+        f"Entering place_order:\n"
+        f"ticker={ticker},\n"
+        f"figi={figi},\n"
+        f"direction={direction},\n"
+        f"expected_sum={expected_sum},\n"
+        f"exit_comment={exit_comment},\n"
+        f"signal_price={signal_price}"
     )
 
+    # Проверка лимита тикеров перед открытием новой позиции
     if not check_position_exists(ticker, positions) and not can_open_position(
         positions, MAX_TICKERS
     ):
         logging.error(f"Exceeded max tickers limit: {MAX_TICKERS}")
+        notify_error(
+            ticker,
+            expected_sum or "N/A",
+            "MaxTickers",
+            f"Превышен лимит одновременных тикеров ({MAX_TICKERS})",
+        )
         return {"error": f"Превышен лимит одновременных тикеров ({MAX_TICKERS})"}, 400
 
+    # Получение данных об инструменте из API
     instrument_uid, lot, min_price_increment = get_instrument_data(client, figi, ticker)
-    if instrument_uid is None or lot is None:
+    if instrument_uid is None or lot is None or min_price_increment is None:
         logging.error(f"Failed to get instrument data for FIGI: {figi}")
+        notify_error(
+            ticker,
+            expected_sum or "N/A",
+            "InstrumentData",
+            f"Не удалось получить данные инструмента для FIGI {figi}",
+        )
         return {"error": f"Не удалось получить данные инструмента для FIGI {figi}"}, 400
 
-    # Проверка min_price_increment
-    if min_price_increment is None:
-        logging.error(f"min_price_increment is None for FIGI: {figi}")
-        return {
-            "error": f"Не удалось получить min_price_increment для FIGI {figi}"
-        }, 400
-
-    # Округление цен
-    try:
-        if signal_price is not None:
+    # Округление signal_price до шага цены инструмента
+    if signal_price is not None:
+        try:
             signal_price = Decimal(str(signal_price))
             signal_price = (signal_price / min_price_increment).quantize(
                 Decimal("1"), rounding=ROUND_DOWN
             ) * min_price_increment
             signal_price = float(signal_price)
-        if stop_loss_price is not None:
-            stop_loss_price = Decimal(str(stop_loss_price))
-            stop_loss_price = (stop_loss_price / min_price_increment).quantize(
-                Decimal("1"), rounding=ROUND_DOWN
-            ) * min_price_increment
-            stop_loss_price = float(stop_loss_price)
-    except ValueError as e:
-        logging.error(f"Invalid price format: {str(e)}")
-        return {"error": f"Неверный формат цены: {str(e)}"}, 400
+            logging.info(f"Rounded signal_price to {signal_price}")
+        except ValueError as e:
+            logging.error(f"Invalid signal_price format: {str(e)}")
+            notify_error(
+                ticker,
+                expected_sum or "N/A",
+                "PriceError",
+                f"Неверный формат signal_price: {str(e)}",
+            )
+            return {"error": f"Неверный формат signal_price: {str(e)}"}, 400
 
-    logging.info(
-        f"""
-        Rounded signal_price to {signal_price},
-        stop_loss_price to {stop_loss_price if stop_loss_price is not None else 'None'},
-        using min_price_increment={min_price_increment}
-    """.strip()
-    )
-
-    # Расчёт quantity после округления
+    # Расчёт количества лотов в зависимости от типа операции
     if exit_comment in ["LongStop", "ShortStop", "LongTrTake", "ShortTrTake"]:
         if not check_position_exists(ticker, positions):
             logging.error(
                 f"Attempt to close non-existent position for ticker: {ticker}"
             )
+            notify_error(
+                ticker,
+                expected_sum or "N/A",
+                "NoPosition",
+                "Попытка закрыть несуществующую позицию",
+            )
             return {"error": "Попытка закрыть несуществующую позицию"}, 400
         quantity = positions[ticker]["quantity"]
         logging.info(f"Closing position: ticker={ticker}, quantity={quantity}")
-
-        if exit_comment in ["LongStop", "ShortStop"]:
-            is_executed, trade_data = handle_stop_close(
-                client, account_id, ticker, figi, positions, exit_comment
-            )
-            if is_executed:
-                try:
-                    log_trade_to_csv(trade_data)
-                except Exception as e:
-                    logging.error(f"Failed to write to trades.csv: {str(e)}")
-                with lock:
-                    del positions[ticker]
-                    save_positions_to_json(positions)
-                logging.info(
-                    f"Closed position by stop: ticker={ticker}, exitComment={exit_comment}"
-                )
-                return {"message": f"Position {ticker} closed by broker"}, 200
-            else:
-                return {
-                    "error": "Stop-order not executed, alert sent. Check Tinkoff terminal."
-                }, 400
     else:
         if check_position_exists(ticker, positions):
             logging.error(f"Position already open for ticker: {ticker}")
+            notify_error(
+                ticker, expected_sum or "N/A", "PositionExists", "Позиция уже открыта"
+            )
             return {"error": "Позиция уже открыта"}, 400
         quantity = get_quantity(expected_sum, signal_price, lot)
         logging.info(
@@ -149,10 +137,23 @@ def place_order(
         )
         if quantity == 0:
             logging.error("Quantity is 0")
+            notify_error(
+                ticker,
+                expected_sum or "N/A",
+                "InvalidQuantity",
+                "Количество лотов равно 0",
+            )
             return {"error": "Количество лотов равно 0"}, 400
 
+    # Подготовка параметров ордера
     if not isinstance(quantity, int):
         logging.error(f"Invalid quantity type: expected int, got {type(quantity)}")
+        notify_error(
+            ticker,
+            expected_sum or "N/A",
+            "InvalidQuantity",
+            f"Неверный тип quantity: ожидается int, получено {type(quantity)}",
+        )
         return {
             "error": f"Неверный тип quantity: ожидается int, получено {type(quantity)}"
         }, 400
@@ -166,18 +167,26 @@ def place_order(
 
     if not isinstance(account_id, str):
         logging.error(f"Invalid account_id type: expected str, got {type(account_id)}")
+        notify_error(
+            ticker,
+            expected_sum or "N/A",
+            "InvalidAccount",
+            f"Неверный тип account_id: ожидается строка, получено {type(account_id)}",
+        )
         return {
             "error": f"Неверный тип account_id: ожидается строка, получено {type(account_id)}"
         }, 400
 
     logging.info(
-        f"Preparing to place order: instrument_uid={instrument_uid} ({type(instrument_uid)}), "
-        f"quantity={quantity} ({type(quantity)}), "
-        f"direction={order_direction} ({type(order_direction)}), "
-        f"account_id={account_id} ({type(account_id)}), "
-        f"client_order_id={client_order_id} ({type(client_order_id)})"
+        f"Preparing to place order:\n"
+        f"instrument_uid={instrument_uid},\n"
+        f"quantity={quantity},\n"
+        f"direction={order_direction},\n"
+        f"account_id={account_id},\n"
+        f"client_order_id={client_order_id}"
     )
 
+    # Размещение рыночного ордера через API
     try:
         response = client.orders.post_order(
             instrument_id=instrument_uid,
@@ -188,22 +197,19 @@ def place_order(
             order_id=client_order_id,
         )
         logging.info(f"Order placed successfully: order_id={response.order_id}")
-
     except Exception as e:
         logging.error(f"Error placing order: {str(e)}")
+        notify_error(
+            ticker,
+            expected_sum or "N/A",
+            "OrderError",
+            f"Ошибка при размещении ордера: {str(e)}",
+        )
         return {"error": f"Ошибка при размещении ордера: {str(e)}"}, 400
 
-    is_opening = exit_comment in [None, "OpenLong", "OpenShort"]
+    # Обработка результата: обновление позиций или запуск мониторинга закрытия
+    is_opening = exit_comment in ["OpenLong", "OpenShort"]
     if is_opening:
-        stop_order_id = None
-        if stop_loss_price is not None:
-            stop_order_id = place_stop_loss(
-                client, account_id, instrument_uid, quantity, stop_loss_price, direction
-            )
-            if stop_order_id is None:
-                logging.error(f"Failed to place stop-loss for ticker: {ticker}")
-                return {"error": f"Не удалось установить стоп-лосс для {ticker}"}, 400
-
         with lock:
             positions[ticker] = {
                 "figi": figi,
@@ -214,25 +220,24 @@ def place_order(
                 "exchange_order_id": response.order_id,
                 "direction": direction,
                 "signal_price": signal_price,
-                "stop_loss_price": stop_loss_price,
-                "stop_order_id": stop_order_id,
                 "exitComment": exit_comment,
             }
             save_positions_to_json(positions)
         logging.info(
-            f"""
-            Opened position: ticker={ticker},
-            quantity={quantity},
-            direction={direction},
-            signal_price={signal_price},
-            stop_order_id={stop_order_id},
-            exitComment={exit_comment}
-        """.strip()
+            f"Opened position:\n"
+            f"ticker={ticker},\n"
+            f"quantity={quantity},\n"
+            f"direction={direction},\n"
+            f"signal_price={signal_price},\n"
+            f"exitComment={exit_comment}"
         )
     else:
         open_order_id = positions[ticker]["exchange_order_id"]
         logging.info(
-            f"Starting monitor for closing order: ticker={ticker}, open_order_id={open_order_id}"
+            f"Starting monitor for closing order:\n"
+            f"ticker={ticker},\n"
+            f"open_order_id={open_order_id},\n"
+            f"close_order_id={response.order_id}"
         )
         threading.Thread(
             target=monitor_order_completion,
@@ -256,39 +261,36 @@ def place_order(
     }, 200
 
 
+# Маршрут для обработки вебхуков от TradingView
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
-    logging.info(f"Received webhook data: {data}")
+    logging.info(f"Received webhook data:\n{json.dumps(data, indent=2)}")
 
+    # Извлечение данных из вебхука
     ticker = data.get("ticker")
     figi = data.get("figi")
     direction = data.get("direction")
     expected_sum = data.get("expected_sum")
     signal_price = data.get("price")
-    stop_loss_price = data.get("stop_loss_price")
     exit_comment = data.get("exitComment")
 
     if expected_sum == "null":
         expected_sum = None
-    if stop_loss_price == "null":
-        stop_loss_price = None
     if signal_price == "null":
         signal_price = None
 
     logging.info(
-        f"""
-        Parsed webhook:
-        ticker={ticker},
-        figi={figi},
-        direction={direction},
-        expected_sum={expected_sum},
-        signal_price={signal_price},
-        stop_loss_price={stop_loss_price},
-        exit_comment={exit_comment}
-    """.strip()
+        f"Parsed webhook:\n"
+        f"ticker={ticker},\n"
+        f"figi={figi},\n"
+        f"direction={direction},\n"
+        f"expected_sum={expected_sum},\n"
+        f"signal_price={signal_price},\n"
+        f"exit_comment={exit_comment}"
     )
 
+    # Валидация полученных данных
     is_valid, result = validate_webhook_data(
         ticker,
         figi,
@@ -296,28 +298,26 @@ def webhook():
         expected_sum,
         exit_comment,
         signal_price,
-        stop_loss_price,
     )
     if not is_valid:
         logging.error(f"Validation failed: {result}")
         return jsonify({"error": result}), 400
 
-    expected_sum, exit_comment, signal_price, stop_loss_price = result
+    expected_sum, exit_comment, signal_price = result
 
     logging.info(
-        f"""
-        Validated data:
-        expected_sum={expected_sum},
-        exit_comment={exit_comment},
-        signal_price={signal_price},
-        stop_loss_price={stop_loss_price}
-        """.strip()
+        f"Validated data:\n"
+        f"expected_sum={expected_sum},\n"
+        f"exit_comment={exit_comment},\n"
+        f"signal_price={signal_price}"
     )
+
+    # Выполнение ордера с использованием Tinkoff API
     try:
         with Client(TOKEN, target=INVEST_GRPC_API) as client:
             logging.info("Initialized Tinkoff client")
             positions = load_positions_from_json()
-            logging.info(f"Loaded positions: {positions}")
+            logging.info(f"Loaded positions:\n{json.dumps(positions, indent=2)}")
             result, status = place_order(
                 client,
                 ticker,
@@ -326,7 +326,6 @@ def webhook():
                 expected_sum,
                 exit_comment,
                 signal_price,
-                stop_loss_price,
                 positions,
             )
             logging.info(f"place_order result: {result}, status: {status}")
@@ -337,6 +336,7 @@ def webhook():
         return jsonify({"error": f"Ошибка при обработке ордера: {str(e)}"}), 500
 
 
+# Основная функция для запуска приложения
 def main():
     global account_id
     logging.info("Starting account initialization")
