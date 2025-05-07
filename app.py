@@ -1,4 +1,3 @@
-# main.py
 # Импорт необходимых библиотек и модулей
 import logging
 from flask import Flask, request, jsonify
@@ -21,6 +20,7 @@ from utils import (
     can_open_position,
     load_positions_from_json,
     save_positions_to_json,
+    calculate_expected_sum,
     POSITIONS_FILE,
 )
 import json
@@ -49,7 +49,7 @@ def place_order(
     ticker,
     figi,
     direction,
-    expected_sum,
+    position_size_percent,
     exit_comment,
     signal_price,
     positions,
@@ -60,7 +60,7 @@ def place_order(
         f"ticker={ticker},\n"
         f"figi={figi},\n"
         f"direction={direction},\n"
-        f"expected_sum={expected_sum},\n"
+        f"position_size_percent={position_size_percent},\n"
         f"exit_comment={exit_comment},\n"
         f"signal_price={signal_price}"
     )
@@ -72,7 +72,7 @@ def place_order(
         logging.error(f"Exceeded max tickers limit: {MAX_TICKERS}")
         notify_error(
             ticker,
-            expected_sum or "N/A",
+            position_size_percent or "N/A",
             "MaxTickers",
             f"Превышен лимит одновременных тикеров ({MAX_TICKERS})",
         )
@@ -84,7 +84,7 @@ def place_order(
         logging.error(f"Failed to get instrument data for FIGI: {figi}")
         notify_error(
             ticker,
-            expected_sum or "N/A",
+            position_size_percent or "N/A",
             "InstrumentData",
             f"Не удалось получить данные инструмента для FIGI {figi}",
         )
@@ -103,13 +103,14 @@ def place_order(
             logging.error(f"Invalid signal_price format: {str(e)}")
             notify_error(
                 ticker,
-                expected_sum or "N/A",
+                position_size_percent or "N/A",
                 "PriceError",
                 f"Неверный формат signal_price: {str(e)}",
             )
             return {"error": f"Неверный формат signal_price: {str(e)}"}, 400
 
     # Расчёт количества лотов в зависимости от типа операции
+    expected_sum = None
     if exit_comment in ["LongStop", "ShortStop", "LongTrTake", "ShortTrTake"]:
         if not check_position_exists(ticker, positions):
             logging.error(
@@ -117,7 +118,7 @@ def place_order(
             )
             notify_error(
                 ticker,
-                expected_sum or "N/A",
+                position_size_percent or "N/A",
                 "NoPosition",
                 "Попытка закрыть несуществующую позицию",
             )
@@ -128,9 +129,29 @@ def place_order(
         if check_position_exists(ticker, positions):
             logging.error(f"Position already open for ticker: {ticker}")
             notify_error(
-                ticker, expected_sum or "N/A", "PositionExists", "Позиция уже открыта"
+                ticker,
+                position_size_percent or "N/A",
+                "PositionExists",
+                "Позиция уже открыта",
             )
             return {"error": "Позиция уже открыта"}, 400
+        # Расчёт суммы позиции как процент от свободных средств
+        try:
+            expected_sum = calculate_expected_sum(
+                client, account_id, position_size_percent
+            )
+            logging.info(
+                f"Calculated expected_sum: {expected_sum} for position_size_percent: {position_size_percent}"
+            )
+        except Exception as e:
+            logging.error(f"Error calculating expected_sum: {str(e)}")
+            notify_error(
+                ticker,
+                position_size_percent or "N/A",
+                "BalanceError",
+                f"Ошибка при расчёте суммы позиции: {str(e)}",
+            )
+            return {"error": f"Ошибка при расчёте суммы позиции: {str(e)}"}, 400
         quantity = get_quantity(expected_sum, signal_price, lot)
         logging.info(
             f"Calculated quantity: {quantity} for expected_sum={expected_sum}, signal_price={signal_price}, lot={lot}"
@@ -139,7 +160,7 @@ def place_order(
             logging.error("Quantity is 0")
             notify_error(
                 ticker,
-                expected_sum or "N/A",
+                position_size_percent or "N/A",
                 "InvalidQuantity",
                 "Количество лотов равно 0",
             )
@@ -150,7 +171,7 @@ def place_order(
         logging.error(f"Invalid quantity type: expected int, got {type(quantity)}")
         notify_error(
             ticker,
-            expected_sum or "N/A",
+            position_size_percent or "N/A",
             "InvalidQuantity",
             f"Неверный тип quantity: ожидается int, получено {type(quantity)}",
         )
@@ -169,7 +190,7 @@ def place_order(
         logging.error(f"Invalid account_id type: expected str, got {type(account_id)}")
         notify_error(
             ticker,
-            expected_sum or "N/A",
+            position_size_percent or "N/A",
             "InvalidAccount",
             f"Неверный тип account_id: ожидается строка, получено {type(account_id)}",
         )
@@ -201,7 +222,7 @@ def place_order(
         logging.error(f"Error placing order: {str(e)}")
         notify_error(
             ticker,
-            expected_sum or "N/A",
+            position_size_percent or "N/A",
             "OrderError",
             f"Ошибка при размещении ордера: {str(e)}",
         )
@@ -271,12 +292,12 @@ def webhook():
     ticker = data.get("ticker")
     figi = data.get("figi")
     direction = data.get("direction")
-    expected_sum = data.get("expected_sum")
+    position_size_percent = data.get("position_size_percent")
     signal_price = data.get("price")
     exit_comment = data.get("exitComment")
 
-    if expected_sum == "null":
-        expected_sum = None
+    if position_size_percent == "null":
+        position_size_percent = None
     if signal_price == "null":
         signal_price = None
 
@@ -285,7 +306,7 @@ def webhook():
         f"ticker={ticker},\n"
         f"figi={figi},\n"
         f"direction={direction},\n"
-        f"expected_sum={expected_sum},\n"
+        f"position_size_percent={position_size_percent},\n"
         f"signal_price={signal_price},\n"
         f"exit_comment={exit_comment}"
     )
@@ -295,7 +316,7 @@ def webhook():
         ticker,
         figi,
         direction,
-        expected_sum,
+        position_size_percent,
         exit_comment,
         signal_price,
     )
@@ -303,11 +324,11 @@ def webhook():
         logging.error(f"Validation failed: {result}")
         return jsonify({"error": result}), 400
 
-    expected_sum, exit_comment, signal_price = result
+    position_size_percent, exit_comment, signal_price = result
 
     logging.info(
         f"Validated data:\n"
-        f"expected_sum={expected_sum},\n"
+        f"position_size_percent={position_size_percent},\n"
         f"exit_comment={exit_comment},\n"
         f"signal_price={signal_price}"
     )
@@ -323,7 +344,7 @@ def webhook():
                 ticker,
                 figi,
                 direction,
-                expected_sum,
+                position_size_percent,
                 exit_comment,
                 signal_price,
                 positions,
