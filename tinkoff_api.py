@@ -5,7 +5,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import (
 )  # Для генерации ключа из пароля
 from cryptography.hazmat.primitives import hashes  # Для хэширования
 import base64  # Для кодирования ключа
-import os  # Для работы с файлами
+import os  # Для работы с файлами и переменными окружения
 import subprocess  # Для вызова shred
 from tinkoff.invest import Client  # Клиент Tinkoff API
 from tinkoff.invest.constants import INVEST_GRPC_API  # Константа для API
@@ -16,8 +16,11 @@ def load_token():
     # Путь к зашифрованному токену на сервере
     token_file = "/root/encrypted_token.bin"
 
-    # Запрос пароля с консоли сервера
-    password = input("Enter decryption password: ").encode()
+    # Получение пароля из переменной окружения
+    password = os.getenv("TINKOFF_TOKEN_PASSWORD")
+    if not password:
+        raise ValueError("Переменная окружения TINKOFF_TOKEN_PASSWORD не установлена")
+    password = password.encode()
 
     # Генерация ключа из пароля
     salt = b"salt_TradingProject"
