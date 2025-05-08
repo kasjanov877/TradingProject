@@ -17,9 +17,9 @@ def load_token():
     token_file = "/root/encrypted_token.bin"
 
     # Получение пароля из переменной окружения
-    password = os.getenv("TINKOFF_TOKEN_PASSWORD")
+    password = os.getenv("Fr5usbns_4d")
     if not password:
-        raise ValueError("Переменная окружения TINKOFF_TOKEN_PASSWORD не установлена")
+        raise ValueError("Переменная окружения Fr5usbns_4d не установлена")
     password = password.encode()
 
     # Генерация ключа из пароля
