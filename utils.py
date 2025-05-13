@@ -30,7 +30,7 @@ def calculate_expected_sum(client, account_id, position_size_percent):
     Args:
         client: Клиент Tinkoff API.
         account_id: ID аккаунта.
-        position_size_percent: Процент от свободных средств (1–50).
+        position_size_percent: Процент от свободных средств.
 
     Returns:
         float: Рассчитанная сумма позиции (expected_sum).
