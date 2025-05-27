@@ -5,6 +5,7 @@ import json
 import logging
 from decimal import Decimal
 from tinkoff.invest.utils import quotation_to_decimal
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 # Определение путей к файлам
 POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "positions.json")
@@ -23,6 +24,7 @@ def get_quantity(expected_sum, signal_price, lot):
 
 
 # Расчёт суммы позиции как процент от свободных средств
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def calculate_expected_sum(client, account_id, position_size_percent):
     """
     Рассчитывает сумму позиции на основе процента от свободных средств на счёте.
@@ -30,21 +32,42 @@ def calculate_expected_sum(client, account_id, position_size_percent):
     Args:
         client: Клиент Tinkoff API.
         account_id: ID аккаунта.
-        position_size_percent: Процент от свободных средств.
+        position_size_percent: Процент от выделенной суммы (определяет плечо).
 
     Returns:
         float: Рассчитанная сумма позиции (expected_sum).
 
     Raises:
-        Exception: Если портфель недоступен или свободные средства равны нулю.
+        ValueError: Если свободные средства равны нулю, слишком много позиций или недостаточно средств.
+        Exception: Если портфель недоступен.
     """
     try:
         portfolio = client.operations.get_portfolio(account_id=account_id)
         free_balance = float(quotation_to_decimal(portfolio.total_amount_currencies))
         logging.info(f"Free balance: {free_balance} RUB")
+
         if free_balance <= 0:
             raise ValueError("Свободные средства на счёте равны нулю")
-        expected_sum = free_balance * (position_size_percent / 100)
+
+        # Подсчёт открытых позиций
+        num_positions = len(portfolio.positions)
+        logging.info(f"Open positions: {num_positions}")
+
+        if num_positions >= 3:
+            raise ValueError("Слишком много открытых позиций")
+
+        # Расчёт выделенной суммы (1/3, 1/2 или весь остаток)
+        allocated_amount = free_balance / (3 - num_positions)
+        logging.info(f"Allocated amount: {allocated_amount} RUB")
+
+        # Проверка достаточности средств
+        if free_balance < allocated_amount:
+            raise ValueError(
+                f"Недостаточно средств: {free_balance} RUB для выделенной суммы {allocated_amount} RUB"
+            )
+
+        # Расчёт суммы позиции с учётом position_size_percent
+        expected_sum = allocated_amount * (position_size_percent / 100)
         logging.info(
             f"Calculated expected_sum: {expected_sum} for position_size_percent: {position_size_percent}"
         )

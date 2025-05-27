@@ -5,11 +5,11 @@ import requests
 # Отправляет данные на сервер для создания рыночного ордера на покупку
 url = "https://ordertrans.ru/webhook"
 data = {
-    "ticker": "SBER",  # Тикер инструмента
-    "figi": "BBG004730N88",  # FIGI инструмента
+    "ticker": "GAZP",  # Тикер инструмента
+    "figi": "BBG004730RP0",  # FIGI инструмента
     "direction": "buy",  # Направление ордера (покупка)
-    "position_size_percent": 10,  # Размер позиции в % капитала на счете
-    "price": 310,  # Цена входа (signal_price) для идентификации
+    "position_size_percent": 5,  # Размер позиции в % капитала на счете
+    "price": 139,  # Цена входа (signal_price) для идентификации
     "exitComment": "OpenLong",  # Комментарий, указывающий на открытие длинной позиции
 }
 
