@@ -49,8 +49,15 @@ def calculate_expected_sum(client, account_id, position_size_percent):
         if free_balance <= 0:
             raise ValueError("Свободные средства на счёте равны нулю")
 
-        # Подсчёт открытых позиций
-        num_positions = len(portfolio.positions)
+        # Логирование всех позиций для диагностики
+        logging.info(
+            f"Portfolio positions: {[(pos.figi, pos.instrument_type) for pos in portfolio.positions]}"
+        )
+
+        # Подсчёт открытых позиций (только акции)
+        num_positions = sum(
+            1 for pos in portfolio.positions if pos.instrument_type == "share"
+        )
         logging.info(f"Open positions: {num_positions}")
 
         if num_positions >= 3:
