@@ -23,60 +23,45 @@ def get_quantity(expected_sum, signal_price, lot):
         return 0
 
 
-# Расчёт суммы позиции как процент от свободных средств
+# Расчёт суммы позиции как процент от стоимости портфеля
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-def calculate_expected_sum(client, account_id, position_size_percent):
+def calculate_expected_sum(client, account_id, position_size_percent, leverage):
     """
-    Рассчитывает сумму позиции на основе процента от свободных средств на счёте.
+    Рассчитывает сумму позиции на основе процента от стоимости портфеля и рычага.
 
     Args:
         client: Клиент Tinkoff API.
         account_id: ID аккаунта.
-        position_size_percent: Процент от выделенной суммы (определяет плечо).
+        position_size_percent: Процент от стоимости портфеля (≤ 100).
+        leverage: Рычаг (≤ 4).
 
     Returns:
         float: Рассчитанная сумма позиции (expected_sum).
 
     Raises:
-        ValueError: Если свободные средства равны нулю, слишком много позиций или недостаточно средств.
+        ValueError: Если position_size_percent или leverage недопустимы.
         Exception: Если портфель недоступен.
     """
     try:
         portfolio = client.operations.get_portfolio(account_id=account_id)
-        free_balance = float(quotation_to_decimal(portfolio.total_amount_currencies))
-        logging.info(f"Free balance: {free_balance} RUB")
+        portfolio_value = float(quotation_to_decimal(portfolio.total_amount_portfolio))
+        logging.info(f"Portfolio value: {portfolio_value} RUB")
 
-        if free_balance <= 0:
-            raise ValueError("Свободные средства на счёте равны нулю")
-
-        # Логирование всех позиций для диагностики
-        logging.info(
-            f"Portfolio positions: {[(pos.figi, pos.instrument_type) for pos in portfolio.positions]}"
-        )
-
-        # Подсчёт открытых позиций (только акции)
-        num_positions = sum(
-            1 for pos in portfolio.positions if pos.instrument_type == "share"
-        )
-        logging.info(f"Open positions: {num_positions}")
-
-        if num_positions >= 3:
-            raise ValueError("Слишком много открытых позиций")
-
-        # Расчёт выделенной суммы (1/3, 1/2 или весь остаток)
-        allocated_amount = free_balance / (3 - num_positions)
-        logging.info(f"Allocated amount: {allocated_amount} RUB")
-
-        # Проверка достаточности средств
-        if free_balance < allocated_amount:
+        # Проверка допустимости параметров
+        if position_size_percent is None or leverage is None:
             raise ValueError(
-                f"Недостаточно средств: {free_balance} RUB для выделенной суммы {allocated_amount} RUB"
+                "position_size_percent и leverage должны быть указаны для открытия позиции"
             )
+        if position_size_percent > 100:
+            raise ValueError("position_size_percent не должен превышать 100%")
+        if leverage > 4:
+            raise ValueError("Leverage не должен превышать 4")
 
-        # Расчёт суммы позиции с учётом position_size_percent
-        expected_sum = allocated_amount * (position_size_percent / 100)
+        # Расчёт суммы позиции
+        allocated_amount = portfolio_value
+        expected_sum = allocated_amount * (position_size_percent / 100) * leverage
         logging.info(
-            f"Calculated expected_sum: {expected_sum} for position_size_percent: {position_size_percent}"
+            f"Calculated expected_sum: {expected_sum} for position_size_percent: {position_size_percent}, leverage: {leverage}"
         )
         return expected_sum
     except Exception as e:

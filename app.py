@@ -53,6 +53,7 @@ def place_order(
     exit_comment,
     signal_price,
     positions,
+    leverage,
 ):
     # Логирование входных параметров ордера
     logging.info(
@@ -62,7 +63,8 @@ def place_order(
         f"direction={direction},\n"
         f"position_size_percent={position_size_percent},\n"
         f"exit_comment={exit_comment},\n"
-        f"signal_price={signal_price}"
+        f"signal_price={signal_price},\n"
+        f"leverage={leverage}"
     )
 
     # Проверка лимита тикеров перед открытием новой позиции
@@ -138,10 +140,10 @@ def place_order(
         # Расчёт суммы позиции как процент от свободных средств
         try:
             expected_sum = calculate_expected_sum(
-                client, account_id, position_size_percent
+                client, account_id, position_size_percent, leverage
             )
             logging.info(
-                f"Calculated expected_sum: {expected_sum} for position_size_percent: {position_size_percent}"
+                f"Calculated expected_sum: {expected_sum} for position_size_percent: {position_size_percent}, leverage: {leverage}"
             )
         except Exception as e:
             logging.error(f"Error calculating expected_sum: {str(e)}")
@@ -295,11 +297,14 @@ def webhook():
     position_size_percent = data.get("position_size_percent")
     signal_price = data.get("price")
     exit_comment = data.get("exitComment")
+    leverage = data.get("leverage")
 
     if position_size_percent == "null":
         position_size_percent = None
     if signal_price == "null":
         signal_price = None
+    if leverage == "null":
+        leverage = None
 
     logging.info(
         f"Parsed webhook:\n"
@@ -308,6 +313,7 @@ def webhook():
         f"direction={direction},\n"
         f"position_size_percent={position_size_percent},\n"
         f"signal_price={signal_price},\n"
+        f"leverage={leverage},\n"
         f"exit_comment={exit_comment}"
     )
 
@@ -319,18 +325,20 @@ def webhook():
         position_size_percent,
         exit_comment,
         signal_price,
+        leverage,
     )
     if not is_valid:
         logging.error(f"Validation failed: {result}")
         return jsonify({"error": result}), 400
 
-    position_size_percent, exit_comment, signal_price = result
+    position_size_percent, exit_comment, signal_price, leverage = result
 
     logging.info(
         f"Validated data:\n"
         f"position_size_percent={position_size_percent},\n"
         f"exit_comment={exit_comment},\n"
-        f"signal_price={signal_price}"
+        f"signal_price={signal_price},\n"
+        f"leverage={leverage}"
     )
 
     # Выполнение ордера с использованием Tinkoff API
@@ -348,6 +356,7 @@ def webhook():
                 exit_comment,
                 signal_price,
                 positions,
+                leverage,
             )
             logging.info(f"place_order result: {result}, status: {status}")
             return jsonify(result), status
